@@ -1,0 +1,135 @@
+@startuml class_exceptions
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Gerarchia Eccezioni — MissionManagerError
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+skinparam class {
+  BackgroundColor<<base exception>> #FDEDEC
+  BorderColor<<base exception>>     #E74C3C
+  FontColor<<base exception>>       #922B21
+
+  BackgroundColor<<exception>>      #FDEDEC
+  BorderColor<<exception>>          #E74C3C
+  FontColor<<exception>>            #922B21
+}
+
+skinparam ArrowColor #E74C3C
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+
+note as INTRO
+  Tutte le eccezioni di MissionManager ereditano da MissionManagerError.
+  I frontend catturano l'intera gerarchia con un singolo
+  "except MissionManagerError" e la mappano al formato di risposta
+  appropriato (HTTP status code o messaggio stderr + exit 1).
+  Le eccezioni di Python built-in (ValueError, TypeError, ecc.)
+  non sono gestite qui: segnalano bug, non errori di business logic.
+end note
+
+' ==========================================
+' Base
+' ==========================================
+class MissionManagerError <<base exception>> {
+  +message: str
+}
+
+' ==========================================
+' Eccezioni figlie dirette
+' ==========================================
+class ValidationError <<exception>> {
+  +message: str
+  +field: Optional[str]
+}
+
+note right of ValidationError
+  HTTP 400 Bad Request / CLI exit 1 + stderr.
+  Sollevata quando l'input non rispetta i vincoli
+  di dominio: titolo vuoto, valore fuori range,
+  combinazione di campi non valida.
+  field: nome del parametro non valido (opzionale);
+  permette ai frontend di evidenziare il campo
+  specifico nel messaggio di errore.
+  Esempi: Mission.validate() con title vuoto,
+  AssignmentPolicy.__post_init__() con
+  max_total < max_concurrent.
+end note
+
+class NotFoundError <<exception>> {
+  +message: str
+  +resource_type: Optional[str]
+  +resource_id: Optional[UUID]
+}
+
+note right of NotFoundError
+  HTTP 404 Not Found / CLI exit 1 + stderr.
+  Sollevata dai service e dagli adapter repository
+  quando una risorsa richiesta non esiste nel sistema.
+  resource_type: tipo della risorsa assente
+    (es. "mission", "assignment", "badge").
+  resource_id: UUID della risorsa cercata.
+  Entrambi opzionali ma raccomandati per diagnostica.
+end note
+
+class ACLError <<exception>> {
+  +message: str
+}
+
+note right of ACLError
+  HTTP 403 Forbidden / CLI exit 1 + stderr.
+  Sollevata da AuthorizationPolicy quando
+  l'operatore corrente non ha i permessi
+  necessari per l'operazione richiesta.
+  Non espone dettagli interni sulla struttura
+  ACL per evitare information disclosure.
+end note
+
+class StatusTransitionError <<exception>> {
+  +message: str
+  +current_status: str
+  +requested_status: str
+}
+
+note right of StatusTransitionError
+  HTTP 409 Conflict / CLI exit 1 + stderr.
+  Sollevata da Status.can_transition_to() quando
+  la transizione richiesta non è consentita dalla
+  macchina a stati del dominio.
+  current_status e requested_status: valori stringa
+  dello stato corrente e richiesto; consentono
+  messaggi diagnostici precisi nei frontend
+  (es. "Cannot transition from COMPLETED to IN_PROGRESS").
+  Distinta da ValidationError: l'input è valido,
+  ma lo stato corrente dell'entità non consente
+  l'operazione.
+end note
+
+class OperationAbortedError <<exception>> {
+  +message: str
+  +abort_reason: Optional[str]
+}
+
+note right of OperationAbortedError
+  HTTP 422 Unprocessable Entity / CLI exit 1 + stderr.
+  Sollevata dai service quando un MissionHook
+  (tipicamente in un hook BEFORE_*) imposta
+  context.abort = True durante l'esecuzione.
+  abort_reason: messaggio esplicativo fornito
+  dal plugin; è di uso interno (loggato lato server)
+  e non sempre esposto al client per evitare
+  di rivelare dettagli dell'implementazione del hook.
+  Il frontend REST restituisce il message generico;
+  abort_reason è disponibile nei log applicativi.
+end note
+
+' ==========================================
+' Relazioni di ereditarietà
+' ==========================================
+MissionManagerError <|-- ValidationError
+MissionManagerError <|-- NotFoundError
+MissionManagerError <|-- ACLError
+MissionManagerError <|-- StatusTransitionError
+MissionManagerError <|-- OperationAbortedError
+
+@enduml

@@ -1,0 +1,179 @@
+@startuml class_frontend_rest
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Frontend REST API JSON
+
+package "missionmanager.frontends.rest" {
+
+  class RestApp {
+    --
+    +create_app()
+    +register_routers()
+    +setup_middleware()
+  }
+
+  class AuthMiddleware {
+    -_identity_provider: OperatorIdentityProvider
+    -_auth_policy: AuthorizationPolicy
+    --
+    +before_request()
+    -resolve_check(rule, method) (Operation, ResourceRef)
+  }
+
+  class AclEntriesRouter {
+    -_acl_svc: AclService
+    --
+    +GET  /acl/entries → list()
+    +POST /acl/entries → create()
+    +PATCH  /acl/entries/<id> → update()
+    +DELETE /acl/entries/<id> → delete()
+    +PUT  /persons/<id>/acl → set_acl_profile()
+  }
+
+  class ErrorHandler {
+    --
+    +handle_not_found(e: NotFoundError) Response
+    +handle_validation(e: ValidationError) Response
+    +handle_acl_error(e: ACLError) Response
+    +handle_status_transition(e: StatusTransitionError) Response
+    +handle_operation_aborted(e: OperationAbortedError) Response
+    +handle_generic(e: Exception) Response
+  }
+
+  class MissionRouter {
+    -_mission_svc: MissionService
+    --
+    +GET  /missions → list()
+    +POST /missions → create()
+    +GET  /missions/<id> → get()
+    +DELETE /missions/<id> → delete()
+    +GET  /missions/<id>/objectives → list_objectives()
+    +GET  /missions/<id>/assignments → list_assignments()
+    +POST /missions/<id>/assignments → create_assignment()
+  }
+
+  class AssignmentRouter {
+    -_assignment_svc: AssignmentService
+    -_badge_svc: BadgeService
+    --
+    +GET  /assignments/<id> → get()
+    +POST /assignments/<id>/assign → assign()
+    +PUT  /assignments/<id>/status → update_status()
+    +POST /assignments/<id>/badge → award_badge()
+    +GET  /assignments/<id>/objectives → list_objectives()
+  }
+
+  class ObjectiveRouter {
+    -_assignment_svc: AssignmentService
+    --
+    +GET  /objectives/<id> → get()
+    +GET  /objectives/<id>/activities → list_activities()
+  }
+
+  class ActivityRouter {
+    -_activity_svc: ActivityService
+    -_badge_svc: BadgeService
+    --
+    +GET  /activities/<id> → get()
+    +PUT  /activities/<id>/status → update_status()
+    +POST /activities/<id>/assign → assign_person()
+    +POST /activities/<id>/badge → award_badge()
+  }
+
+  class BadgeRouter {
+    -_badge_svc: BadgeService
+    --
+    +GET  /badges → list()
+    +POST /badges → create()
+    +GET  /badges/<id> → get()
+    +GET  /persons/<id>/badges → list_by_person()
+  }
+
+  class PersonRouter {
+    -_person_svc: PersonService
+    --
+    +GET    /persons → list()
+    +POST   /persons → create()
+    +GET    /persons/<id> → get()
+    +PUT    /persons/<id> → update()
+    +DELETE /persons/<id> → delete()
+    +GET    /groups → list_groups()
+    +POST   /groups → create_group()
+    +GET    /groups/<id> → get_group()
+    +DELETE /groups/<id> → delete_group()
+    +GET    /groups/<id>/members → list_members()
+  }
+}
+
+RestApp --> MissionRouter
+RestApp --> AssignmentRouter
+RestApp --> ObjectiveRouter
+RestApp --> ActivityRouter
+RestApp --> BadgeRouter
+RestApp --> PersonRouter
+RestApp --> AclEntriesRouter
+RestApp --> AuthMiddleware
+RestApp --> ErrorHandler
+
+note right of AuthMiddleware
+  Enforcement ACL al confine (DESIGN §10).
+  Usa OperatorIdentityProvider per
+  identificare l'operatore (assente →
+  profilo anonimo implicito), mappa
+  (route, metodo) su (Operation,
+  ResourceRef) e interroga
+  AuthorizationPolicy.is_allowed:
+  DENIED → 401 (anonimo) / 403
+  (autenticato). Le route /api/acl
+  sono autorizzate da AclService
+  (autoprotezione MANAGE_ACL).
+end note
+
+note right of MissionRouter
+  POST /missions accetta payload con
+  obiettivi e relative attività (blueprint).
+  POST /missions/<id>/assignments crea
+  un MissionAssignment: il payload include
+  assignee_type (PERSON|GROUP) e assignee_id.
+end note
+
+note right of AssignmentRouter
+  Gestisce il ciclo di vita del
+  MissionAssignment: assign, stato, BadgeAward.
+  POST /assignments/<id>/assign imposta
+  l'assegnatario su un MissionAssignment
+  in stato UNASSIGNED (payload: assignee_type,
+  assignee_id); porta lo stato a ASSIGNED.
+  POST /assignments/<id>/badge crea
+  il BadgeAward solo se status == COMPLETED
+  e propaga agli assegnatari.
+end note
+
+note right of ActivityRouter
+  POST /activities/<id>/assign accetta
+  person_id: la persona deve appartenere
+  al gruppo dell'assignment oppure essere
+  la persona diretta (AssigneeType==PERSON).
+end note
+
+note right of BadgeRouter
+  /persons/<id>/badges espone i BadgeAward
+  creati da MissionManager per una persona.
+end note
+
+note right of PersonRouter
+  Gestisce il ciclo di vita di Person e Group:
+  creazione, lettura, modifica, cancellazione.
+  POST /persons: payload {nicknames};
+    la Person nasce con il profilo ACL
+    meno privilegiato.
+  PUT /persons/<id>: payload parziale;
+    aggiorna i nicknames.
+  PUT /persons/<id>/acl: assegna il profilo
+    (MANAGE_PROFILES su SYSTEM:global).
+  DELETE /persons/<id>: rimuove la Person
+    dal sistema.
+  GET /groups/<id>/members: restituisce le
+    Person associate al gruppo.
+end note
+
+@enduml

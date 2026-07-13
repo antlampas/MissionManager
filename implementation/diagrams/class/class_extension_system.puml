@@ -1,0 +1,152 @@
+@startuml class_extension_system
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Implementazione - Sistema Estensioni Unificato
+skinparam classAttributeIconSize 0
+
+class RouteSpec <<dataclass frozen>> {
+  +path: str
+  +method: str = "GET"
+  +description: str = ""
+}
+
+class CommandSpec <<dataclass frozen>> {
+  +name: str
+  +description: str = ""
+}
+
+class ExtensionManifest <<dataclass frozen>> {
+  +id: str
+  +name: str
+  +version: str
+  +description: str
+  +code_checksum: str
+  +provides_routes: list[RouteSpec]
+  +provides_commands: list[CommandSpec]
+}
+
+class ExtensionRequest <<dataclass>> {
+  +operator_id: UUID?
+  +params: dict[str, Any]
+  +body: dict[str, Any]
+  +subject: Any
+}
+
+class ExtensionResult <<dataclass init=False>> {
+  +status_code: int
+  +body: Any
+  +data: Any
+  +message: str?
+}
+
+interface MissionExtension <<Protocol>> {
+  +manifest: ExtensionManifest
+  +execute(request: ExtensionRequest): ExtensionResult
+}
+
+class InstalledExtensionEntry <<dataclass frozen>> {
+  +extension_id: str
+  +manifest_checksum: str
+  +code_checksum: str
+}
+
+class InstalledManifestRegistry <<infrastructure.extensions>> {
+  -_path: Path?
+  -_entries: dict[str, InstalledExtensionEntry]
+  +reload(): None
+  +get_entry(ext_id): InstalledExtensionEntry?
+  +get_manifest_checksum(ext_id): str?
+  +get_code_checksum(ext_id): str?
+  +is_approved(ext_id): bool
+  +is_empty(): bool
+}
+
+class ExtensionLoader <<infrastructure.extensions>> {
+  -_scan_paths: list[str]
+  -_registry: InstalledManifestRegistry
+  -_services: dict[str, Any]
+  +load_all(): list[MissionExtension]
+  -_bundle_dirs(): list[Path]
+  -_load_bundle(bundle_dir): MissionExtension?
+}
+
+class _LoadedExtension <<adapter>> {
+  -_inner: Any
+  +manifest: ExtensionManifest
+  -_accepts_subject: bool
+  +execute(request): ExtensionResult
+}
+
+class ExtensionRegistry <<application>> {
+  -_extensions: dict[str, MissionExtension]
+  -_registered_routes: set[tuple[str,str]]
+  +register(extension): None
+  +get(ext_id): MissionExtension?
+  +list(): list[ExtensionManifest]
+  +execute(ext_id, request): ExtensionResult
+  +unregister(ext_id): None
+}
+
+class MissionStatsExtension <<example>>
+class BadgeExportExtension <<example>>
+class AssignmentTimelineExtension <<example>>
+class MissionService
+class AssignmentService
+class BadgeService
+class PersonService
+class RestApp
+class CLIApp
+
+ExtensionManifest o-- RouteSpec
+ExtensionManifest o-- CommandSpec
+MissionExtension --> ExtensionManifest
+MissionExtension ..> ExtensionRequest
+MissionExtension ..> ExtensionResult
+InstalledManifestRegistry o-- InstalledExtensionEntry
+ExtensionLoader --> InstalledManifestRegistry
+ExtensionLoader --> _LoadedExtension
+_LoadedExtension ..|> MissionExtension
+ExtensionLoader ..> MissionService
+ExtensionLoader ..> AssignmentService
+ExtensionLoader ..> BadgeService
+ExtensionLoader ..> PersonService
+ExtensionRegistry o-- MissionExtension
+ExtensionRegistry ..> ExtensionRequest
+ExtensionRegistry ..> ExtensionResult
+RestApp ..> ExtensionRegistry : registra route manifest
+CLIApp ..> ExtensionRegistry : registra comandi manifest
+
+MissionStatsExtension ..|> MissionExtension
+BadgeExportExtension ..|> MissionExtension
+AssignmentTimelineExtension ..|> MissionExtension
+
+note right of ExtensionLoader
+  Scopre solo bundle id/manifest.json + extension.py.
+  manifest_checksum e code_checksum devono combaciare
+  con InstalledManifestRegistry prima dell'import.
+  Le istanze ricevono solo i service compatibili
+  col costruttore dell'estensione.
+end note
+
+note right of ExtensionRegistry
+  Indicizza per manifest.id.
+  Valida namespace /extensions/{id}/... e collisioni
+  method+path in fase di register().
+  execute() esegue il dispatch e supporta adapter
+  execute(request) o execute(request, subject).
+end note
+
+note bottom of MissionStatsExtension
+  id: mission-stats
+  GET /extensions/mission-stats/missions/<mission_id>/stats
+end note
+
+note bottom of BadgeExportExtension
+  id: badge-export
+  GET /extensions/badge-export/persons/<person_id>/badges
+end note
+
+note bottom of AssignmentTimelineExtension
+  id: assignment-timeline
+  GET /extensions/assignment-timeline/missions/<mission_id>/timeline
+end note
+@enduml

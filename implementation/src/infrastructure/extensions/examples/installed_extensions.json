@@ -1,0 +1,17 @@
+{
+  "assignment-timeline": {
+    "manifest_checksum": "sha256:d64c9c4f1e83dd867bf128aa43a99df7db7bb42c92e6530aeeccf7df277fe874",
+    "code_checksum": "sha256:f108027a9cbaf7c349d53d412a4b6c08cbaec896299f55643f86522efee6f10b",
+    "license": "CC-BY-SA-4.0"
+  },
+  "badge-export": {
+    "manifest_checksum": "sha256:236131283b42ba1baebd995609b9f2dd9fd1aff832088d59d7c7afc8ac3dd5b9",
+    "code_checksum": "sha256:f1bb2a0b88918eabc794938cdf80b7cad2c5603fc7409161db8664d1425d385a",
+    "license": "CC-BY-SA-4.0"
+  },
+  "mission-stats": {
+    "manifest_checksum": "sha256:cd5a4f9475759fdfcfdd470551ac91e6e36c155d5c2d084311d874986dbe2b61",
+    "code_checksum": "sha256:373e93f22314475f779316f30ce459f4a3bb4280566d5e11989a4ad57f40eecf",
+    "license": "CC-BY-SA-4.0"
+  }
+}

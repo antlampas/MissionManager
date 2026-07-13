@@ -1,0 +1,221 @@
+@startuml class_adapters
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Layer 3 — Adapter Astratti
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+skinparam class {
+  BackgroundColor<<abstract>>  #F4ECF7
+  BorderColor<<abstract>>      #8E44AD
+  FontColor<<abstract>>        #6C3483
+
+  BackgroundColor<<concrete>>  #F2F3F4
+  BorderColor<<concrete>>      #AAB7B8
+  FontColor<<concrete>>        #5D6D7E
+}
+
+skinparam interface {
+  BackgroundColor #E8F4FD
+  BorderColor     #2980B9
+  FontColor       #1A5276
+}
+
+skinparam ArrowColor #8E44AD
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+
+note as INTRO
+  Il Layer 3 contiene le classi base astratte (ABC) per gli adapter.
+  Ogni adapter astratto implementa il contratto Layer 2 corrispondente
+  e dichiara come astratti i metodi che dipendono dalla tecnologia
+  di persistenza / comunicazione.
+  I service non dipendono dagli adapter: li ricevono come contratti
+  Layer 2 via dependency injection al bootstrap dell'applicazione.
+  "Tecnologicamente neutro": il dettaglio concreto (quale database,
+  quale ORM, quale client OIDC) vive nelle implementazioni concrete,
+  non documentate in questo diagramma.
+end note
+
+' ==========================================
+' Repository Adapter generici
+' ==========================================
+abstract class RepositoryAdapter<T> <<abstract>> {
+  +{abstract} get(id: UUID) T
+  +{abstract} list(filters: dict) list[T]
+  +{abstract} save(entity: T) T
+  +{abstract} delete(id: UUID) bool
+  +{abstract} exists(id: UUID) bool
+}
+
+note right of RepositoryAdapter
+  Base comune per tutti i repository adapter.
+  Le implementazioni concrete iniettano il
+  meccanismo di persistenza nel costruttore.
+  Implementazioni SQLAlchemy:
+    SqlAlchemyMissionRepository riceve una
+    Session SQLAlchemy (PostgreSQL o MySQL).
+  Implementazioni in-memory per test:
+    InMemoryMissionRepository usa un dict.
+  Supporto multi-database: le implementazioni
+  concrete configurano il dialetto SQLAlchemy
+  in base al DATABASE_URL (postgresql:// o mysql://).
+end note
+
+note as CONCRETE_REPOS
+  I repository SQLAlchemy di Mission, MissionAssignment, Objective,
+  Activity, Badge e BadgeAward estendono direttamente RepositoryAdapter.
+  Non esistono classi astratte intermedie specializzate per tali repository.
+end note
+
+' ==========================================
+' Repository Adapter — Persone e Gruppi
+' ==========================================
+abstract class PersonRepositoryAdapter <<abstract>> {
+  +{abstract} get_by_group(group_id: UUID) list[Person]
+}
+
+abstract class GroupRepositoryAdapter <<abstract>> {
+  +{abstract} add_member(group_id: UUID, person_id: UUID) None
+  +{abstract} remove_member(group_id: UUID, person_id: UUID) None
+}
+
+note right of PersonRepositoryAdapter
+  Due famiglie di implementazioni concrete
+  selezionabili a scelta del sistemista:
+
+  1. **Local DB** (SQLAlchemy):
+     SqlAlchemyPersonRepository estende
+     PersonRepositoryAdapter; usa ORM SQLAlchemy
+     con PostgreSQL (postgresql+psycopg2://) o
+     MySQL (mysql+pymysql://). MissionManager
+     persiste e gestisce direttamente Person e Group.
+
+  2. **OIDC** (Authentik / Keycloak):
+     OidcPersonRepository estende
+     PersonRepositoryAdapter; usa le API REST
+     dell'identity provider per get(), list(),
+     save(), delete(). get_by_group() mappa i
+     gruppi OIDC (Keycloak groups / Authentik
+     groups) alle Person del dominio.
+     PersonService.add() chiama l'API admin OIDC
+     per creare l'utente; remove() lo elimina.
+
+  La scelta è configurata tramite
+  PERSON_BACKEND=local|oidc nel file di
+  configurazione o nella variabile d'ambiente
+  MISSIONMANAGER_PERSON_BACKEND.
+end note
+
+note right of GroupRepositoryAdapter
+  Segue lo stesso schema di PersonRepositoryAdapter:
+  implementazione locale (SQLAlchemy) o OIDC.
+  In modalità OIDC, i gruppi sono mappati dai
+  gruppi dell'identity provider e la membership
+  usa gli endpoint admin del provider
+  (Authentik add_user/remove_user, Keycloak
+  users/{id}/groups/{groupId}).
+end note
+
+' ==========================================
+' Adapter di identità operatore
+' ==========================================
+abstract class OperatorIdentityAdapter <<abstract>> {
+  -_person_repo: PersonRepository
+  --
+  +{abstract} get_current_operator() Person
+}
+
+note right of OperatorIdentityAdapter
+  Tre implementazioni concrete, una per frontend:
+    RestOperatorIdentityAdapter: valida il token
+      JWT emesso dall'OIDC provider o dalla sessione
+      HTTP; chiama PersonRepository.get() per il
+      profilo completo con il Profile ACL.
+    WebOperatorIdentityAdapter: legge la sessione
+      dalla richiesta Quart (async); chiama
+      PersonRepository.get().
+    CliOperatorIdentityAdapter: legge l'operator_id
+      dalla variabile d'ambiente o dal file di
+      configurazione Click; chiama
+      PersonRepository.get().
+  In modalità OIDC, RestOperatorIdentityAdapter
+  verifica il JWT via JWKS del provider e mappa
+  il sub/preferred_username a un UUID di Person.
+  Ogni frontend istanzia il proprio adapter.
+end note
+
+' Implementazioni concrete OperatorIdentityAdapter (solo riferimento)
+class RestOperatorIdentityAdapter <<concrete>> {
+}
+
+class WebOperatorIdentityAdapter <<concrete>> {
+}
+
+class CliOperatorIdentityAdapter <<concrete>> {
+}
+
+' ==========================================
+' Hook Adapter
+' ==========================================
+abstract class MissionHookAdapter <<abstract>> {
+  +{abstract} manifest: PluginManifest
+  +{abstract} execute(context: HookContext) None
+}
+
+note right of MissionHookAdapter
+  Base per i plugin hook. Ogni plugin concreto
+  estende MissionHookAdapter e implementa execute()
+  con la propria logica di business (es. sincronizzazione
+  con sistemi esterni, audit logging, notifiche).
+  Esempio concreto: ExternalSyncHook si registra
+  su AFTER_COMPLETE e invia i dati di completamento
+  a un sistema esterno tramite HTTP.
+end note
+
+' Esempio concreto (solo riferimento)
+class ExternalSyncHook <<concrete>> {
+}
+
+' ==========================================
+' Interfacce Layer 2 (riferimento)
+' ==========================================
+interface BaseRepository<T>
+interface MissionRepository
+interface MissionAssignmentRepository
+interface ObjectiveRepository
+interface ActivityRepository
+interface BadgeRepository
+interface BadgeAwardRepository
+interface PersonRepository
+interface GroupRepository
+interface OperatorIdentityProvider
+interface MissionHook
+
+' ==========================================
+' Relazioni di ereditarietà (Layer 3 → Layer 3)
+' ==========================================
+PersonRepositoryAdapter --|> RepositoryAdapter
+GroupRepositoryAdapter --|> RepositoryAdapter
+
+' Ereditarietà concrete OperatorIdentityAdapter
+RestOperatorIdentityAdapter --|> OperatorIdentityAdapter
+WebOperatorIdentityAdapter --|> OperatorIdentityAdapter
+CliOperatorIdentityAdapter --|> OperatorIdentityAdapter
+
+' Esempio concreto MissionHookAdapter
+ExternalSyncHook --|> MissionHookAdapter
+
+' ==========================================
+' Implementazione contratti Layer 2
+' ==========================================
+RepositoryAdapter ..|> BaseRepository
+PersonRepositoryAdapter ..|> PersonRepository
+GroupRepositoryAdapter ..|> GroupRepository
+OperatorIdentityAdapter ..|> OperatorIdentityProvider
+MissionHookAdapter ..|> MissionHook
+
+' OperatorIdentityAdapter usa PersonRepository
+OperatorIdentityAdapter --> PersonRepository : _person_repo
+
+@enduml

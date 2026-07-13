@@ -1,0 +1,471 @@
+@startuml class_services
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Layer 4 — Services, DTOs e AuthorizationPolicy
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+skinparam class {
+  BackgroundColor<<DTO>>        #F0F3F4
+  BorderColor<<DTO>>            #AAB7B8
+
+  BackgroundColor<<service>>    #FDEBD0
+  BorderColor<<service>>        #CA6F1E
+
+  BackgroundColor<<policy>>     #F0F3F4
+  BorderColor<<policy>>         #AAB7B8
+
+  BackgroundColor<<registry>>   #FDEBD0
+  BorderColor<<registry>>       #CA6F1E
+}
+
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+
+' ── DTOs ────────────────────────────────────────────────────
+class BadgeDTO <<DTO>> {
+  +id: str
+  +name: str
+  +description: str
+  +image_url: Optional[str]
+}
+
+class BadgeAwardDTO <<DTO>> {
+  +id: str
+  +badge: BadgeDTO
+  +target_type: str
+  +target_id: str
+  +recipients: list[str]
+  +recipients_count: int
+  +awarded_at: str
+}
+
+class ActivityDTO <<DTO>> {
+  +id: str
+  +title: str
+  +description: str
+  +status: str
+  +assignees: list[str]
+  +badge_award: Optional[BadgeAwardDTO]
+}
+
+class ObjectiveDTO <<DTO>> {
+  +id: str
+  +description: str
+  +outcome: Optional[str]
+  +activities: list[ActivityDTO]
+}
+
+class MissionDTO <<DTO>> {
+  +id: str
+  +title: str
+  +description: str
+  +assignment_policy: dict
+  +objectives: list[ObjectiveDTO]
+}
+
+class AssignmentDTO <<DTO>> {
+  +id: str
+  +mission_id: str
+  +assignee_type: Optional[str]
+  +assignee_id: Optional[str]
+  +status: str
+  +outcome: Optional[str]
+  +objectives: list[ObjectiveDTO]
+  +badge_award: Optional[BadgeAwardDTO]
+}
+
+class PersonDTO <<DTO>> {
+  +id: str
+  +nicknames: list[str]
+  +acl_level: int
+  +acl_groups: list[str]
+  +primary_nickname: str
+}
+
+class AclEntryDTO <<DTO>> {
+  +id: str
+  +subject_type: str
+  +subject_id: Optional[str]
+  +resource_type: str
+  +resource_id: str
+  +operation: str
+  +permission: str
+  +level: Optional[int]
+  +group: Optional[str]
+  +profile_join: str
+  +subject_join: str
+}
+
+class GroupDTO <<DTO>> {
+  +id: str
+  +name: Optional[str]
+  +zone_type: Optional[str]
+  +zone_description: Optional[str]
+}
+
+note as DTOnote
+  Tutti i campi dei DTO usano tipi primitivi Python
+  (str, int, Optional[str]): nessun value object di
+  dominio (Status, UUID, AssigneeType) attraversa
+  il confine Service→Frontend.
+  outcome in AssignmentDTO e ObjectiveDTO:
+  None se non tutti in stato terminale;
+  calcolato on-demand da compute_outcome().
+  BadgeAwardDTO.badge: embedded (denormalizzato)
+  per evitare fetch aggiuntive dal frontend.
+  assignment_policy in MissionDTO: dict serializzato
+  (es. {"max_total": 5, "max_concurrent": 2} oppure
+  {"unlimited": true}).
+end note
+
+' ── Sistema ACL (dettagli in class_acl.puml) ────────────────
+class AuthorizationPolicy <<policy>> {
+  +is_allowed(principal_id, operation, resource) bool
+}
+
+note right of AuthorizationPolicy
+  Decisione ACL pura (DESIGN §10):
+  valuta le AclEntry via le porte
+  AclEntryRepository / ProfileProvider /
+  ResourceHierarchyProvider.
+  Precedenza DENY > ALLOW > default-deny;
+  ereditarietà OR-permissiva dai padri;
+  MANAGE_ACL non eredita.
+  Usata dai middleware frontend e da
+  AclService, non dai service di dominio.
+end note
+
+class AclService <<service>> {
+  -_entries: AclEntryRepository
+  -_authz: AuthorizationPolicy
+  -_seeding: SeedingPolicy
+  --
+  +list_entries(rtype, rid, operator_id) list[AclEntryDTO]
+  +list_all_entries(operator_id) list[AclEntryDTO]
+  +create_entry(...) AclEntryDTO
+  +update_entry(entry_id, ...) AclEntryDTO
+  +delete_entry(entry_id, operator_id) void
+  +on_resource_created(resource, creator_id) void
+  +on_resource_deleted(resource) void
+  +ensure_bootstrap_entries(read, write, admin) void
+}
+
+note right of AclService
+  Gestione delle AclEntry, autoprotetta
+  da MANAGE_ACL (risorsa o SYSTEM:global).
+  on_resource_created: seeding del creatore
+  (default: solo MANAGE_ACL) nella stessa
+  transazione; ensure_bootstrap_entries:
+  soglie di default su repository vuoto.
+  Mission/Assignment/BadgeService la
+  notificano a create/delete.
+end note
+
+' ── PluginRegistry ──────────────────────────────────────────
+class PluginRegistry <<registry>> {
+  -_hooks: dict[HookPoint, list[MissionHook]]
+  +register(hook: MissionHook) void
+  +unregister(plugin_id: str) void
+  +fire(point: HookPoint, context: HookContext) void
+  +list_plugins() list[PluginManifest]
+}
+
+note right of PluginRegistry
+  plugin_registry è Optional nei service;
+  se None, fire() non viene mai chiamato.
+  fire(BEFORE_*, ctx): propaga ctx.abort
+  solo da plugin TRUSTED; i SANDBOXED usano
+  ScopedHookContext e le mutazioni sono ignorate.
+  fire(AFTER_*, ctx): cattura le
+  eccezioni senza propagarle.
+  Iniettato via DI al bootstrap.
+end note
+
+' ── Interfacce repository ────────────────────────────────────
+interface MissionRepository {
+  +get(id) Mission
+  +save(m: Mission) Mission
+  +list(filters) list[Mission]
+  +delete(id) bool
+}
+
+interface MissionAssignmentRepository {
+  +get(id) MissionAssignment
+  +save(a: MissionAssignment) MissionAssignment
+  +list(filters) list[MissionAssignment]
+  +delete(id) bool
+  +get_by_mission(mission_id) list[MissionAssignment]
+  +get_by_assignee(assignee_id) list[MissionAssignment]
+  +get_by_status(status) list[MissionAssignment]
+  +count_by_mission(mission_id) int
+  +count_active_by_mission(mission_id) int
+}
+
+interface ObjectiveRepository {
+  +get(id) Objective
+  +save(o: Objective) Objective
+  +get_by_assignment(assignment_id) list[Objective]
+}
+
+interface ActivityRepository {
+  +get(id) Activity
+  +save(a: Activity) Activity
+  +get_by_objective(objective_id) list[Activity]
+  +get_by_person(person_id) list[Activity]
+}
+
+interface BadgeRepository {
+  +get(id) Badge
+  +save(b: Badge) Badge
+  +list() list[Badge]
+}
+
+interface BadgeAwardRepository {
+  +save(a: BadgeAward) BadgeAward
+  +get_by_person(person_id: UUID) list[BadgeAward]
+  +get_by_assignment(assignment_id: UUID) Optional[BadgeAward]
+  +get_by_activity(activity_id: UUID) Optional[BadgeAward]
+  +exists_for_target(target_type: str, target_id: UUID) bool
+}
+
+interface PersonRepository {
+  +get(id) Person
+  +list(filters) list[Person]
+  +save(p: Person) Person
+  +delete(id) bool
+  +exists(id) bool
+  +get_by_group(group_id: UUID) list[Person]
+}
+
+interface GroupRepository {
+  +get(id) Group
+  +list(filters) list[Group]
+  +save(g: Group) Group
+  +delete(id) bool
+  +exists(id) bool
+  +add_member(group_id: UUID, person_id: UUID) void
+  +remove_member(group_id: UUID, person_id: UUID) void
+}
+
+' ── Services ────────────────────────────────────────────────
+interface EventPublisherPort {
+  +publish(event: DomainEvent) void
+}
+
+class SqlAlchemyUnitOfWork <<service>> {
+  +transaction() ContextManager[Session]
+}
+
+class MissionService <<service>> {
+  -_mission_repo: MissionRepository
+  -_plugin_registry: Optional[PluginRegistry]
+  -_events: Optional[EventPublisherPort]
+  --
+  +create(title: str, desc: str, objectives: list) MissionDTO
+  +get(id: str) MissionDTO
+  +list(filters: dict) list[MissionDTO]
+  +delete(mission_id: str) void
+  .. blueprint immutabile: nessun add_objective ..
+}
+
+class AssignmentService <<service>> {
+  -_assignment_repo: MissionAssignmentRepository
+  -_mission_repo: MissionRepository
+  -_person_repo: PersonRepository
+  -_group_repo: GroupRepository
+  -_activity_svc: ActivityService
+  -_plugin_registry: Optional[PluginRegistry]
+  -_events: Optional[EventPublisherPort]
+  --
+  +create(mission_id: str, assignee_type: Optional[str], assignee_id: Optional[str]) AssignmentDTO
+  +assign(assignment_id: str, assignee_type: str, assignee_id: str) AssignmentDTO
+  +get(id: str) AssignmentDTO
+  +list(mission_id: str, filters: dict) list[AssignmentDTO]
+  +list_activity_candidates(assignment_id: str) dict[str, list[PersonDTO]]
+  +update_status(assignment_id: str, status: str, operator_id: Optional[UUID]) AssignmentDTO
+  +delete(assignment_id: str) void
+  .. list_activity_candidates: perimetro §2.4 nel layer applicativo ..
+}
+
+class ActivityService <<service>> {
+  -_activity_repo: ActivityRepository
+  -_objective_repo: ObjectiveRepository
+  -_assignment_repo: MissionAssignmentRepository
+  -_person_repo: PersonRepository
+  -_group_repo: GroupRepository
+  -_plugin_registry: Optional[PluginRegistry]
+  -_events: Optional[EventPublisherPort]
+  --
+  +get(id: str) ActivityDTO
+  +assign_to(activity_id: str, person_id: str) ActivityDTO
+  +unassign(activity_id: str, person_id: str) ActivityDTO
+  +update_status(activity_id: str, status: str) ActivityDTO
+  +list_by_objective(objective_id: str) list[ActivityDTO]
+}
+
+class BadgeService <<service>> {
+  -_badge_repo: BadgeRepository
+  -_badge_award_repo: BadgeAwardRepository
+  -_assignment_repo: MissionAssignmentRepository
+  -_activity_repo: ActivityRepository
+  -_person_repo: PersonRepository
+  -_plugin_registry: Optional[PluginRegistry]
+  -_events: Optional[EventPublisherPort]
+  --
+  +create(name: str, desc: str, image_url: Optional[str]) BadgeDTO
+  +get(id: str) BadgeDTO
+  +list() list[BadgeDTO]
+  +award_to_assignment(badge_id: str, assignment_id: str) BadgeAwardDTO
+  +award_to_activity(badge_id: str, activity_id: str) BadgeAwardDTO
+  +list_by_person(person_id: str) list[BadgeAwardDTO]
+}
+
+class PersonService <<service>> {
+  -_person_repo: PersonRepository
+  -_group_repo: GroupRepository
+  -_plugin_registry: Optional[PluginRegistry]
+  --
+  +add(nicknames: list[str]) PersonDTO
+  +update(id: str, nicknames: Optional[list[str]]) PersonDTO
+  +set_acl_profile(id: str, acl_level: Optional[int], acl_groups: Optional[list[str]]) PersonDTO
+  +remove_acl_group(id: str, group: str) PersonDTO
+  +remove(id: str) void
+  +get(id: str) PersonDTO
+  +list(filters: dict) list[PersonDTO]
+  +list_by_group(group_id: str) list[PersonDTO]
+  +add_group(name: Optional[str]) GroupDTO
+  +remove_group(group_id: str) void
+  +get_group(group_id: str) GroupDTO
+  +list_groups() list[GroupDTO]
+  +add_group_member(group_id: str, person_id: str) void
+  +remove_group_member(group_id: str, person_id: str) void
+}
+
+' ── Composizione DTO ─────────────────────────────────────────
+MissionDTO *-- ObjectiveDTO
+AssignmentDTO *-- ObjectiveDTO
+AssignmentDTO *-- BadgeAwardDTO
+ObjectiveDTO *-- ActivityDTO
+ActivityDTO *-- BadgeAwardDTO
+BadgeAwardDTO *-- BadgeDTO
+
+' ── Dipendenze service → DTO ─────────────────────────────────
+MissionService ..> MissionDTO : restituisce
+AssignmentService ..> AssignmentDTO : restituisce
+ActivityService ..> ActivityDTO : restituisce
+BadgeService ..> BadgeDTO : restituisce
+BadgeService ..> BadgeAwardDTO : restituisce
+PersonService ..> PersonDTO : restituisce
+PersonService ..> GroupDTO : restituisce
+AclService ..> AclEntryDTO : restituisce
+
+' ── Dipendenze service → repository e porte ─────────────────
+MissionService --> MissionRepository
+MissionService --> PluginRegistry
+MissionService --> EventPublisherPort
+MissionService --> SqlAlchemyUnitOfWork
+
+AssignmentService --> MissionAssignmentRepository
+AssignmentService --> MissionRepository
+AssignmentService --> PersonRepository
+AssignmentService --> GroupRepository
+AssignmentService --> ActivityService
+AssignmentService --> PluginRegistry
+AssignmentService --> EventPublisherPort
+AssignmentService --> SqlAlchemyUnitOfWork
+
+ActivityService --> ActivityRepository
+ActivityService --> ObjectiveRepository
+ActivityService --> MissionAssignmentRepository
+ActivityService --> PersonRepository
+ActivityService --> GroupRepository
+ActivityService --> PluginRegistry
+ActivityService --> EventPublisherPort
+ActivityService --> SqlAlchemyUnitOfWork
+
+BadgeService --> BadgeRepository
+BadgeService --> BadgeAwardRepository
+BadgeService --> MissionAssignmentRepository
+BadgeService --> ActivityRepository
+BadgeService --> PersonRepository
+BadgeService --> PluginRegistry
+BadgeService --> EventPublisherPort
+BadgeService --> SqlAlchemyUnitOfWork
+
+PersonService --> PersonRepository
+PersonService --> GroupRepository
+PersonService --> PluginRegistry
+PersonService --> SqlAlchemyUnitOfWork
+
+' ── Note ─────────────────────────────────────────────────────
+note right of AssignmentService
+  create() verifica AssignmentPolicy prima
+  del hook BEFORE_CREATE_ASSIGNMENT:
+  1. se max_total impostato:
+     count_by_mission() >= max_total
+     → ValidationError.
+  2. se max_concurrent impostato:
+     count_active_by_mission() >= max_concurrent
+     → ValidationError.
+     count_active conta ASSIGNED + IN_PROGRESS;
+     UNASSIGNED è una bozza.
+  Se l'assegnatario è fornito, valida tramite
+  PersonRepository.exists() (PERSON) o
+  GroupRepository.exists() (GROUP).
+  assign() imposta l'assegnatario su un
+  MissionAssignment UNASSIGNED, ricontrolla
+  max_concurrent e lo porta a ASSIGNED.
+  update_status(COMPLETED) richiede esito
+  aggregato COMPLETED, quindi tutte le attività
+  in stato COMPLETED.
+end note
+
+note right of ActivityService
+  Non espone create() pubblicamente:
+  le attività nascono dentro
+  AssignmentService.create().
+  assign_to() verifica che la persona esista
+  (PersonRepository.exists()) e appartenga al
+  gruppo dell'assignment (PersonRepository.get_by_group())
+  oppure sia la persona diretta (AssigneeType==PERSON).
+  update_status(): quando porta una Activity a
+  IN_PROGRESS e il MissionAssignment padre è ASSIGNED,
+  porta automaticamente il padre a IN_PROGRESS
+  (auto-cascade atomico tramite UnitOfWork). FAILED
+  dell'attività propaga FAILED al padre.
+end note
+
+note right of BadgeService
+  award_to_assignment() e award_to_activity()
+  propagano il badge ai destinatari:
+  GROUP → PersonRepository.get_by_group()
+  PERSON → [assignment.assignee_id]
+  ACTIVITY → activity.assignees
+  I recipients vengono registrati in snapshot
+  al momento del conferimento.
+end note
+
+note right of PersonService
+  Gestisce il ciclo di vita di Person e Group.
+  add() crea la Person con il Profile di default
+  (minimo privilegio); set_acl_profile() assegna
+  livello e gruppi (operazione MANAGE_PROFILES,
+  fuori dal catalogo delegabile).
+  remove() non invalida assignment già esistenti.
+  list_by_group() delega a PersonRepository.get_by_group().
+  add_group() / remove_group(): ciclo di vita Group.
+  add_group_member() / remove_group_member(): modifica
+  la membership tramite GroupRepository.
+  PluginRegistry opzionale (iniettato via DI).
+  Singleton: una istanza per processo al bootstrap.
+end note
+
+note bottom of PersonRepository
+  Contratto condiviso da tutti i service.
+  Sostituire il backend (local DB vs OIDC)
+  richiede solo un nuovo adapter del Layer 3,
+  senza toccare alcun service.
+end note
+
+@enduml

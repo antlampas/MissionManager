@@ -1,0 +1,128 @@
+@startuml sequence_create_assignment
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title AssignmentService.create() — Sequenza Completa con Policy e Blueprint
+
+skinparam sequenceArrowThickness 2
+skinparam sequenceParticipantBorderColor #7D3C00
+skinparam sequenceParticipantBackgroundColor #FEF9E7
+skinparam sequenceParticipantFontColor #7D3C00
+skinparam sequenceLifeLineBorderColor #7D3C00
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+participant "Frontend\n(REST / Web / CLI)" as FE #EEEEEE
+participant "AssignmentService" as AS #FDEBD0
+participant "MissionRepository\n<<port>>" as MR #D5F5E3
+participant "MissionAssignmentRepository\n<<port>>" as AR #D5F5E3
+participant "PersonRepository\n<<port>>" as PR #D5F5E3
+participant "GroupRepository\n<<port>>" as GR #D5F5E3
+participant "PluginRegistry\n<<service>>" as PLUG #FDEBD0
+participant "ActivityService" as ACS #FDEBD0
+participant "EventPublisher\n<<port>>" as EP #D5F5E3
+
+FE -> AS: create(mission_id, assignee_type, assignee_id)
+activate AS
+
+== Caricamento missione ==
+
+AS -> MR: get(mission_id)
+activate MR
+MR --> AS: mission (con assignment_policy)
+deactivate MR
+
+== Verifica AssignmentPolicy ==
+
+note over AS
+  policy = mission.assignment_policy
+end note
+
+AS -> AR: count_by_mission(mission_id) [se policy.max_total]
+activate AR
+AR --> AS: total: int
+deactivate AR
+
+AS -> AR: count_active_by_mission(mission_id) [se policy.max_concurrent e assignee fornito]
+activate AR
+AR --> AS: active: int
+deactivate AR
+
+note over AS
+  Se total >= max_total: ValidationError
+  Se active >= max_concurrent: ValidationError
+  active conta ASSIGNED + IN_PROGRESS; UNASSIGNED è bozza.
+end note
+
+== Validazione assegnatario ==
+
+alt assignee_type == PERSON
+  AS -> PR: exists(assignee_id)
+  activate PR
+  PR --> AS: True
+  deactivate PR
+else assignee_type == GROUP
+  AS -> GR: exists(assignee_id)
+  activate GR
+  GR --> AS: True
+  deactivate GR
+end
+
+== Plugin BEFORE ==
+
+AS -> PLUG: fire(BEFORE_CREATE_ASSIGNMENT,\n  HookContext({mission_id, assignee_type, assignee_id}))
+activate PLUG
+PLUG --> AS: HookContext (abort=False)
+deactivate PLUG
+
+== Creazione assignment e replicazione blueprint ==
+
+note over AS
+  assignment_id = uuid4()
+  status_iniziale = ASSIGNED se assignee fornito, UNASSIGNED altrimenti
+  assignment = MissionAssignment(id, mission_id, assignee_type, assignee_id, status)
+
+  Per ogni Objective in mission.objectives:
+    new_obj = Objective(id=uuid4(), ..., assignment_id)
+    Per ogni Activity in blueprint_obj:
+      new_act = Activity(id=uuid4(), ..., status=UNASSIGNED, assignees=[])
+    new_obj.activities.append(new_act)
+  assignment.objectives.append(new_obj)
+end note
+
+AS -> AR: save(assignment)
+activate AR
+note right of AR
+  Salvataggio atomico:
+  assignment + tutti gli Objective
+  + tutte le Activity replicate
+  in un'unica transazione
+end note
+AR --> AS: assignment persistito
+deactivate AR
+
+== Plugin AFTER ==
+
+AS -> PLUG: fire(AFTER_CREATE_ASSIGNMENT,\n  HookContext(result=assignment))
+activate PLUG
+PLUG --> AS: OK
+deactivate PLUG
+
+== Evento di dominio (solo se assignee presente) ==
+
+AS -> EP: publish(AssignmentCreated(\n  assignment_id, mission_id,\n  assignee_type, assignee_id))
+activate EP
+EP --> AS: OK
+deactivate EP
+
+note over AS
+  AssignmentCreated viene pubblicato
+  solo se l'assegnatario è presente.
+  Assegnazioni UNASSIGNED non pubblicano
+  l'evento (assignee_type e assignee_id
+  sono campi obbligatori del DTO evento).
+end note
+
+AS --> FE: AssignmentDTO
+deactivate AS
+
+@enduml

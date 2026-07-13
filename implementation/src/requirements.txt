@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: CC-BY-SA-4.0
+# Async web framework (REST API + Web App) — exposes a standard ASGI callable
+quart>=0.19
+
+# CLI framework
+click>=8.1
+
+# ORM — PostgreSQL e MySQL
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pymysql>=1.1
+
+# YAML configuration
+PyYAML>=6.0
+
+# JWT validation OIDC / REST identity. Il token locale usa il signer HMAC del package auth.
+PyJWT[crypto]>=2.8
+
+# Password hashing (autenticazione locale)
+bcrypt>=4.0
+
+# HTTP client per OIDC discovery, token exchange e admin API
+requests>=2.31
+
+# Store condiviso opzionale per rate limit e revoca JWT locale multi-worker
+# redis>=5.0
+
+# TOML support (Python < 3.11 fallback)
+tomli>=2.0; python_version < '3.11'

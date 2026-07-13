@@ -1,0 +1,61 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Missioni — Mission Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-header__title">Missioni</h1>
+  <p class="page-header__meta">Blueprint delle missioni disponibili</p>
+  <div class="page-header__actions">
+    <a href="{{ url_for('mission_web.new_mission_form') }}" class="btn btn-primary">
+      ＋ Nuova missione
+    </a>
+  </div>
+</div>
+
+{% if missions %}
+  <div class="mission-grid">
+    {% for m in missions %}
+    <article class="mission-card">
+      <header>
+        <h2 class="mission-card__title">
+          <a href="{{ url_for('mission_web.get_mission', id=m.id) }}">{{ m.title }}</a>
+        </h2>
+        <p class="mission-card__meta">
+          <span class="id-chip">{{ m.id }}</span>
+        </p>
+      </header>
+
+      {% if m.description %}
+        <p class="mission-card__desc">{{ m.description }}</p>
+      {% endif %}
+
+      <footer class="mission-card__footer">
+        <span class="text-sm text-muted">
+          {{ m.objectives | length }} obiettiv{{ 'o' if m.objectives | length == 1 else 'i' }}
+        </span>
+        <a href="{{ url_for('mission_web.get_mission', id=m.id) }}"
+           class="btn btn-secondary btn-sm">
+          Dettaglio →
+        </a>
+      </footer>
+    </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state__icon" aria-hidden="true">📋</div>
+    <h2 class="empty-state__title">Nessuna missione</h2>
+    <p class="empty-state__desc">Non ci sono ancora missioni configurate.</p>
+    <div style="margin-top:1rem;">
+      <a href="{{ url_for('mission_web.new_mission_form') }}" class="btn btn-primary">
+        ＋ Crea la prima missione
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

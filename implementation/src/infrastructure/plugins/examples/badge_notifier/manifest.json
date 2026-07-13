@@ -1,0 +1,13 @@
+{
+  "id": "badge-notifier",
+  "name": "Badge Notifier",
+  "version": "1.0.0",
+  "description": "Logga i dettagli del badge assegnato dopo ogni award.",
+  "hooks": [
+    "AFTER_AWARD_BADGE"
+  ],
+  "trust_level": "TRUSTED",
+  "priority": 10,
+  "code_checksum": "sha256:545da50155b95068ffbafd5b6dfbcbf101274362712068a40c260d19097df46a",
+  "license": "CC-BY-SA-4.0"
+}

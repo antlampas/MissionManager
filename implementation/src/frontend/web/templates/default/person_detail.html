@@ -1,0 +1,99 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}{{ person.primary_nickname }} — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_persons') }}">Persone</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">{{ person.primary_nickname }}</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">{{ person.primary_nickname }}</h1>
+  <div class="page-header__meta">
+    <span class="id-chip">{{ person.id }}</span>
+  </div>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+<!-- Modifica -->
+<form data-form="person-edit" data-method="PUT"
+      data-endpoint="{{ url_for('mission_web.update_person', id=person.id) }}"
+      data-redirect="reload">
+  <div class="card">
+    <div class="card__header">
+      <h2 class="card__title">Profilo</h2>
+    </div>
+
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label form-label--required" for="nicknames">Nickname</label>
+      <textarea class="form-control" id="nicknames" rows="2"
+                data-json="nicknames" data-json-type="list">{{ person.nicknames | join('\n') }}</textarea>
+      <p class="form-hint">Uno per riga; il primo è quello principale.</p>
+    </div>
+
+    <div style="margin-top:1.25rem;">
+      <button type="submit" class="btn btn-primary" data-submit>Salva modifiche</button>
+    </div>
+  </div>
+</form>
+
+<!-- Profilo ACL (sola lettura: si gestisce dalla pagina ACL) -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Profilo ACL</h2>
+  </div>
+  <p style="margin:0;">
+    Livello: <strong>{{ person.acl_level }}</strong>
+    <span class="text-muted text-sm">(più basso = più privilegiato)</span><br>
+    Gruppi: <strong>{{ person.acl_groups | join(', ') if person.acl_groups else '—' }}</strong>
+  </p>
+  <p class="form-hint" style="margin-bottom:0;">
+    Il profilo si assegna dalla pagina <a href="{{ url_for('mission_web.acl_management') }}">ACL</a>.
+  </p>
+</div>
+
+<!-- Badge ricevuti -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Badge ricevuti</h2>
+    <span class="text-muted text-sm">{{ badges | length }}</span>
+  </div>
+  {% if badges %}
+    <ul class="assignee-list" style="gap:.6rem;">
+      {% for award in badges %}
+        <li class="badge-award" title="{{ award.badge.description }}">
+          🏅 {{ award.badge.name or award.badge.id[:8] ~ '…' }}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted text-sm" style="margin:0;">Nessun badge ricevuto.</p>
+  {% endif %}
+</div>
+
+<!-- Zona pericolosa -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Elimina persona</h2>
+  </div>
+  <p class="form-hint" style="margin-top:0;">
+    L'eliminazione è permanente e rimuove la persona dall'anagrafica.
+  </p>
+  <form data-form="delete" data-method="DELETE"
+        data-endpoint="{{ url_for('mission_web.delete_person', id=person.id) }}"
+        data-redirect="{{ url_for('mission_web.list_persons') }}"
+        data-confirm="Eliminare definitivamente {{ person.primary_nickname }}?">
+    <button type="submit" class="btn btn-danger" data-submit>Elimina persona</button>
+  </form>
+</div>
+
+{% endblock %}

@@ -1,0 +1,71 @@
+@startuml sequence_local_login
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Implementazione - Login locale (timing-safe, lockout, must_change)
+
+participant "Client / Web" as C
+participant "AuthService" as AS
+participant "LocalAuthAdapter" as AD
+participant "UnitOfWork" as UOW
+participant "PersonRepository" as PR
+participant "CredentialRepository" as CR
+
+C -> AS : login_local(username, password)
+note right of AS
+  login_local NON è @transactional:
+  l'adapter gestisce transazioni proprie.
+end note
+AS -> AD : authenticate(username, password)
+activate AD
+
+AD -> UOW : transaction()  (lettura)
+AD -> PR : get_by_nickname(username)
+PR --> AD : Person | None
+AD -> CR : get(person.id)
+CR --> AD : LocalCredential | None
+
+AD -> AD : stored = credential.hash\nse assente → _dummy_hash
+AD -> AD : bcrypt.checkpw(password, stored)
+note right of AD
+  Verifica a tempo costante: bcrypt gira anche
+  su nickname/credenziali inesistenti (dummy hash)
+  → i tempi non rivelano quali account esistano.
+end note
+
+alt credenziali non valide (o Person/credenziale assente)
+  alt credenziale esistente
+    AD -> UOW : transaction()  (COMMIT indipendente)
+    AD -> CR : get(person.id)  ' ri-lettura
+    AD -> AD : failed_attempts += 1\nse >= soglia → locked_until = now + durata
+    AD -> CR : save(credential)
+    note right of AD
+      _register_failure committa PRIMA del raise:
+      il rollback del caso d'uso non deve azzerare
+      il conteggio (altrimenti niente lockout).
+    end note
+  end
+  AD --> AS : raise AuthenticationError
+  AS --> C : 401 Credenziali non valide
+else password corretta
+  alt account bloccato (locked_until > now)
+    AD --> AS : raise AuthenticationError
+    AS --> C : 401 Account bloccato
+  else sbloccato
+    opt contatori da azzerare
+      AD -> UOW : transaction()
+      AD -> CR : save(reset failed_attempts / locked_until)
+    end
+    AD -> AD : issue_token(person)  (JWT HS256, jti)
+    AD --> AS : (Person, token)
+    deactivate AD
+    AS --> C : (Person, token)
+    C -> AS : password_change_required(person.id)
+    AS --> C : bool (must_change_password)
+    note right of C
+      REST: espone must_change_password nel JSON di login.
+      Web: se True redirige a /change-password prima di
+      ogni altra operazione.
+    end note
+  end
+end
+
+@enduml

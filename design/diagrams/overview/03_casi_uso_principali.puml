@@ -1,0 +1,107 @@
+@startuml 03_casi_uso_principali
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Casi d'Uso - MissionManager
+left to right direction
+
+actor "Gestore Missioni" as GM
+actor "Amministratore" as ADM
+actor "Sistema" as SYS
+
+rectangle "Gestione Missioni (Blueprint)" {
+  usecase "Creare missione\n(con obiettivi e attività)" as UC1
+  usecase "Aggiungere obiettivo\na missione esistente" as UC2
+}
+
+rectangle "Gestione Assignment" {
+  usecase "Assegnare missione\na persona" as UC3
+  usecase "Assegnare missione\na gruppo" as UC4
+  usecase "Assegnare MissionAssignment\nnon assegnato" as UC4b
+  usecase "Aggiornare stato\nassignment" as UC5
+}
+
+rectangle "Gestione Attività" {
+  usecase "Assegnare attività\na persona del gruppo" as UC6
+  usecase "Aggiornare stato\nattività" as UC7
+}
+
+rectangle "Badge e Riconoscimenti" {
+  usecase "Creare definizione\nbadge" as UC8
+  usecase "Creare BadgeAward\nper assignment" as UC9
+  usecase "Creare BadgeAward\nper attività" as UC10
+  usecase "Visualizzare assegnazioni\nbadge persona" as UC11
+}
+
+rectangle "Gestione Persone e Gruppi" {
+  usecase "Gestire ciclo di vita\ndi persone e gruppi" as UC12
+}
+
+GM --> UC1
+GM --> UC2
+GM --> UC3
+GM --> UC4
+GM --> UC4b
+GM --> UC5
+GM --> UC6
+GM --> UC7
+GM --> UC8
+GM --> UC9
+GM --> UC10
+GM --> UC11
+
+ADM --> UC12
+
+SYS ..> UC5 : <<extend>>\ncalcolo esiti derivati
+SYS ..> UC7 : <<extend>>\ncalcolo esiti derivati
+
+UC3 ..> UC1 : <<include>>
+UC4 ..> UC1 : <<include>>
+UC9 ..> UC5 : <<extend>>\n(solo COMPLETED)
+UC10 ..> UC7 : <<extend>>\n(solo COMPLETED)
+
+note right of UC1
+  Obiettivi e relative attività
+  vengono definiti contestualmente
+  alla creazione (blueprint).
+  Non è possibile aggiungere attività
+  a un obiettivo dopo la creazione.
+end note
+
+note right of UC3
+  Crea un MissionAssignment per
+  la persona indicata; replica
+  obiettivi e attività dal blueprint.
+end note
+
+note right of UC4
+  Crea un MissionAssignment per
+  il gruppo indicato; replica
+  obiettivi e attività dal blueprint.
+  Le attività sono assegnabili ai
+  membri del gruppo.
+end note
+
+note right of UC4b
+  Imposta l'assegnatario su un
+  MissionAssignment creato in stato
+  UNASSIGNED (senza assegnatario iniziale),
+  portandolo ad ASSIGNED.
+  Usa AssignmentService.assign().
+end note
+
+note right of SYS
+  Calcola automaticamente l'esito
+  di Objective e MissionAssignment
+  dagli stati terminali delle entità
+  sottostanti. Non è un attore umano.
+end note
+
+note right of UC12
+  PersonService: add, update, remove,
+  get, list, list_by_group.
+  GroupRepository: CRUD gruppi + membership.
+  REST: PersonRouter (/persons, /groups).
+  CLI: PersonCommands (person add, group-add, group-update).
+  Dettaglio: uc_gestione_persone.
+end note
+
+@enduml

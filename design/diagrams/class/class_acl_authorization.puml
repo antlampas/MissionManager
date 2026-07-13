@@ -1,0 +1,207 @@
+@startuml class_acl_authorization
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Sistema ACL (DESIGN §10)
+
+' ── Nucleo di dominio ─────────────────────────────────────
+enum SubjectType {
+  USER
+  PUBLIC
+}
+
+enum Permission {
+  ALLOW
+  DENY
+}
+
+enum JoinOp {
+  AND
+  OR
+}
+
+enum Operation {
+  VIEW
+  LIST
+  EDIT
+  DELETE
+  ASSIGN
+  UPDATE_STATUS
+  AWARD_BADGE
+  MANAGE_MEMBERS
+  CREATE_ASSIGNMENT
+  CREATE_MISSION
+  CREATE_BADGE
+  CREATE_PERSON
+  CREATE_GROUP
+  MANAGE_PROFILES
+  EXECUTE
+  MANAGE_ACL
+  --
+  +read_only: bool
+}
+
+class SubjectRef <<value object>> {
+  +type: SubjectType
+  +id: Optional[str]
+  --
+  {static} +public() SubjectRef
+  {static} +user(id) SubjectRef
+}
+
+class ResourceRef <<value object>> {
+  +type: ResourceType
+  +id: UUID | str
+  --
+  +key() str
+  +is_type_root() bool
+  {static} +type_root(t: ResourceType) ResourceRef
+}
+
+note right of ResourceRef
+  id: UUID concreto, "*" per la
+  radice di tipo (default per-tipo)
+  oppure "global" per SYSTEM:global
+  (operazioni senza risorsa specifica).
+end note
+
+class Profile <<value object>> {
+  +level: int
+  +groups: FrozenSet[str]
+  --
+  {static} +anonymous() Profile
+  +stored_groups() List[str]
+}
+
+note right of Profile
+  Profilo del richiedente: livello
+  (più basso = più privilegiato, D3/D8)
+  e gruppi; include sempre il gruppo
+  universale "public".
+  Anonimo: (ANON_SENTINEL, {"public"}).
+end note
+
+class AclEntry <<value object>> {
+  +id: UUID
+  +subject: SubjectRef
+  +resource: ResourceRef
+  +operation: Operation
+  +permission: Permission
+  +level: Optional[int]
+  +group: Optional[str]
+  +profile_join: JoinOp = OR
+  +subject_join: JoinOp = AND
+  --
+  +validate()
+  +matches(principal_id, profile: Profile) bool
+}
+
+note bottom of AclEntry
+  Unità atomica di autorizzazione.
+  validate() applica INV-1..INV-5:
+  INV-1 almeno uno tra level e group;
+  INV-2 nessuna ALLOW mutante
+        soddisfacibile dall'anonimo;
+  INV-3 level >= 0, group non vuoto;
+  INV-4 join nei valori ammessi;
+  INV-5 PUBLIC + subject_join=OR vietato.
+  matches() combina subjectMatch e
+  profilePart secondo i join (§5.1).
+end note
+
+' ── Porte (Layer 2) ───────────────────────────────────────
+interface AclEntryRepository {
+  +get(entry_id) Optional[AclEntry]
+  +list_for(resource, operation) List[AclEntry]
+  +list_by_resource(resource) List[AclEntry]
+  +list_all() List[AclEntry]
+  +save(entry) AclEntry
+  +delete(entry_id) bool
+  +delete_by_resource(resource)
+  +is_empty() bool
+}
+
+interface ProfileProvider {
+  +profile_of(principal_id: Optional[UUID]) Profile
+}
+
+interface ResourceHierarchyProvider {
+  +parents_of(resource: ResourceRef) List[ResourceRef]
+}
+
+interface OperatorIdentityProvider {
+  +get_current_operator() Person
+}
+
+note right of OperatorIdentityProvider
+  Stabilisce CHI sta chiamando
+  (adapter per frontend: REST, Web, CLI).
+  ProfileProvider risolve il Profile
+  del principale (anonimo implicito
+  per i non autenticati, D5).
+end note
+
+' ── Policy (decisione pura) ───────────────────────────────
+class AuthorizationPolicy {
+  --
+  +is_allowed(principal_id, operation, resource) bool
+}
+
+note right of AuthorizationPolicy
+  Decisione pura e stateless (§10):
+  1. entry proprie di (risorsa, operazione);
+  2. filtro per match sul profilo;
+  3. precedenza DENY > ALLOW > default-deny;
+  4. senza entry proprie: ereditarietà dai
+     padri (OR permissiva); MANAGE_ACL
+     non eredita.
+  Consulta la persistenza solo tramite
+  le porte del Layer 2.
+end note
+
+' ── Applicazione ──────────────────────────────────────────
+class SeedingPolicy <<value object>> {
+  +enabled: bool
+  +operations_by_type: Map[ResourceType, Operation[*]]
+  --
+  +operations_for(t: ResourceType) Operation[*]
+}
+
+class AclService {
+  --
+  +list_entries(rtype, rid, operator_id) List[AclEntryDTO]
+  +list_all_entries(operator_id) List[AclEntryDTO]
+  +create_entry(...) AclEntryDTO
+  +update_entry(entry_id, ...) AclEntryDTO
+  +delete_entry(entry_id, operator_id)
+  +on_resource_created(resource, creator_id)
+  +on_resource_deleted(resource)
+  +ensure_bootstrap_entries(read, write, admin)
+}
+
+note bottom of AclService
+  Gestione delle entry (non della decisione):
+  valida INV-1..INV-5 e si autoprotegge con
+  MANAGE_ACL sulla risorsa (o su SYSTEM:global,
+  tier amministrativo). on_resource_created
+  applica la SeedingPolicy nella stessa
+  transazione della creazione (D7, niente
+  ownership). ensure_bootstrap_entries semina
+  le soglie di default su repository vuoto.
+end note
+
+' ── Relazioni ─────────────────────────────────────────────
+AclEntry --> SubjectRef
+AclEntry --> ResourceRef
+AclEntry --> Operation
+AclEntry --> Permission
+AclEntry ..> Profile : matches()
+
+AuthorizationPolicy --> AclEntryRepository
+AuthorizationPolicy --> ProfileProvider
+AuthorizationPolicy --> ResourceHierarchyProvider
+AuthorizationPolicy ..> AclEntry : valuta
+
+AclService --> AclEntryRepository
+AclService --> AuthorizationPolicy : autoprotezione\nMANAGE_ACL
+AclService --> SeedingPolicy
+
+@enduml

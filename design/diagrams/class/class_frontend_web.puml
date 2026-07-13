@@ -1,0 +1,126 @@
+@startuml class_frontend_web
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Frontend Web App (async)
+
+package "missionmanager.frontends.web_app" {
+
+  class create_web_blueprint {
+    --
+    +create_web_blueprint(...) Blueprint
+  }
+
+  class ACLMiddleware {
+    -_identity_provider: OperatorIdentityProvider
+    -_auth_policy: AuthorizationPolicy
+    -_endpoint_acl: Map[endpoint, (Operation, ResourceRef)]
+    --
+    +async before_request()
+  }
+
+  class AclRouteHandler {
+    -_acl_svc: AclService
+    -_person_svc: PersonService
+    --
+    +async get_page()
+    +async set_profile()
+    +async remove_profile_group()
+    +async create_entry()
+    +async delete_entry(entry_id)
+  }
+
+  class RealtimeNotifier {
+    -_connected: Set[Connection]
+    --
+    +async connect(conn: Connection)
+    +async disconnect(conn: Connection)
+    +async broadcast(event: str, data: dict)
+    +async on_assignment_status_change(assignment_id, new_status)
+    +async on_activity_status_change(activity_id, new_status)
+  }
+
+  class MissionRouteHandler {
+    -_mission_svc: MissionService
+    --
+    +async list_missions()
+    +async create_mission()
+    +async get_mission(id)
+    +async delete_mission(id)
+    +async list_objectives(id)
+    +async list_assignments(id)
+    +async create_assignment(id)
+  }
+
+  class AssignmentRouteHandler {
+    -_assignment_svc: AssignmentService
+    -_badge_svc: BadgeService
+    --
+    +async get_assignment(id)
+    +async assign_assignment(id)
+    +async update_assignment_status(id)
+    +async award_badge(id)
+    +async list_objectives(id)
+  }
+
+  class ObjectiveRouteHandler {
+    -_assignment_svc: AssignmentService
+    --
+    +async get_objective(id)
+    +async list_activities(id)
+  }
+
+  class ActivityRouteHandler {
+    -_activity_svc: ActivityService
+    -_badge_svc: BadgeService
+    --
+    +async get_activity(id)
+    +async update_activity_status(id)
+    +async assign_activity(id)
+    +async award_badge(id)
+  }
+}
+
+create_web_blueprint --> MissionRouteHandler
+create_web_blueprint --> AssignmentRouteHandler
+create_web_blueprint --> ObjectiveRouteHandler
+create_web_blueprint --> ActivityRouteHandler
+create_web_blueprint --> AclRouteHandler
+create_web_blueprint --> ACLMiddleware
+create_web_blueprint --> RealtimeNotifier
+
+note right of RealtimeNotifier
+  Notifica i client connessi in tempo
+  reale quando lo stato di un
+  MissionAssignment o di un'Activity
+  cambia. Broadcast a tutte le
+  connessioni aperte.
+end note
+
+note right of create_web_blueprint
+  Factory del Blueprint Quart della Web App.
+  create_web_app() la monta su una app standalone.
+  Tutte le route sono async/await e supportano
+  alta concorrenza senza threading.
+end note
+
+note right of ACLMiddleware
+  Enforcement ACL al confine (DESIGN §10).
+  Identifica l'operatore (assente →
+  profilo anonimo implicito), mappa
+  l'endpoint Quart su (Operation,
+  ResourceRef) e interroga
+  AuthorizationPolicy.is_allowed:
+  DENIED → redirect /login (anonimo,
+  pagine), 401 (anonimo, mutazioni),
+  403 (autenticato).
+  Le route delle AclEntry sono
+  autorizzate da AclService
+  (autoprotezione MANAGE_ACL).
+end note
+
+note right of AclRouteHandler
+  Pagina /acl: profili delle persone
+  (MANAGE_PROFILES su SYSTEM:global)
+  e gestione delle AclEntry.
+end note
+
+@enduml

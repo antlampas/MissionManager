@@ -1,0 +1,166 @@
+@startuml class_acl
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Implementazione - Sistema ACL (domain/acl.py, application, infrastructure)
+
+package "domain/acl.py" {
+  enum SubjectType {
+    USER
+    PUBLIC
+  }
+  enum Permission {
+    ALLOW
+    DENY
+  }
+  enum JoinOp {
+    AND
+    OR
+  }
+  enum Operation {
+    VIEW / LIST (read_only)
+    EDIT / DELETE
+    ASSIGN / UPDATE_STATUS / AWARD_BADGE
+    MANAGE_MEMBERS / CREATE_ASSIGNMENT
+    CREATE_MISSION / CREATE_BADGE
+    CREATE_PERSON / CREATE_GROUP
+    MANAGE_PROFILES / EXECUTE
+    MANAGE_ACL (non ereditabile)
+    --
+    +read_only: bool
+  }
+
+  class SubjectRef <<frozen dataclass>> {
+    +type: SubjectType
+    +id: Optional[str]
+    {static} +public()
+    {static} +user(id)
+  }
+
+  class ResourceRef <<frozen dataclass>> {
+    +type: ResourceType
+    +id: UUID | str      ' UUID | "*" | "global"
+    +key() str
+    +is_type_root() bool
+    {static} +type_root(t)
+  }
+
+  class Profile <<frozen dataclass>> {
+    +level: int = ANON_SENTINEL
+    +groups: frozenset[str]  ' include sempre "public"
+    {static} +anonymous()
+    +stored_groups() list[str]
+  }
+
+  class AclEntry <<frozen dataclass>> {
+    +id: UUID
+    +subject: SubjectRef
+    +resource: ResourceRef
+    +operation: Operation
+    +permission: Permission
+    +level: Optional[int]
+    +group: Optional[str]
+    +profile_join: JoinOp = OR
+    +subject_join: JoinOp = AND
+    --
+    +validate()  ' INV-1..INV-5
+    +matches(principal_id, profile) bool
+  }
+}
+
+package "domain/repositories.py (porte)" {
+  interface AclEntryRepository <<Protocol>> {
+    +get(entry_id) Optional[AclEntry]
+    +list_for(resource, operation) list[AclEntry]
+    +list_by_resource(resource) list[AclEntry]
+    +list_all() list[AclEntry]
+    +save(entry) AclEntry
+    +delete(entry_id) bool
+    +delete_by_resource(resource)
+    +is_empty() bool
+  }
+  interface ProfileProvider <<Protocol>> {
+    +profile_of(principal_id) Profile
+  }
+  interface ResourceHierarchyProvider <<Protocol>> {
+    +parents_of(resource) list[ResourceRef]
+  }
+}
+
+package "application" {
+  class AuthorizationPolicy {
+    -_entries: AclEntryRepository
+    -_profiles: ProfileProvider
+    -_hierarchy: ResourceHierarchyProvider
+    -_uow
+    --
+    +is_allowed(principal_id, operation, resource) bool
+    -_evaluate(...) bool
+  }
+
+  class SeedingPolicy <<frozen dataclass>> {
+    +enabled: bool = True
+    +operations_by_type: Mapping
+    +operations_for(t) tuple[Operation]
+  }
+
+  class AclService {
+    -_entries: AclEntryRepository
+    -_authz: AuthorizationPolicy
+    -_seeding: SeedingPolicy
+    --
+    +list_entries(rtype, rid, operator_id)
+    +list_all_entries(operator_id)
+    +create_entry(...)
+    +update_entry(entry_id, ...)
+    +delete_entry(entry_id, operator_id)
+    +on_resource_created(resource, creator_id)
+    +on_resource_deleted(resource)
+    +ensure_bootstrap_entries(read, write, admin)
+  }
+}
+
+package "infrastructure" {
+  class SqlAlchemyAclEntryRepository {
+    tabella mm_acl_entries
+  }
+  class PersonProfileProvider {
+    -_persons: PersonRepository
+    +profile_of(principal_id) Profile
+  }
+  class MissionResourceHierarchyProvider {
+    +parents_of(resource) list[ResourceRef]
+  }
+}
+
+AclEntry --> SubjectRef
+AclEntry --> ResourceRef
+AclEntry --> Operation
+AclEntry --> Permission
+AclEntry ..> Profile : matches()
+
+AuthorizationPolicy --> AclEntryRepository
+AuthorizationPolicy --> ProfileProvider
+AuthorizationPolicy --> ResourceHierarchyProvider
+AclService --> AclEntryRepository
+AclService --> AuthorizationPolicy : autoprotezione MANAGE_ACL
+AclService --> SeedingPolicy
+
+SqlAlchemyAclEntryRepository ..|> AclEntryRepository
+PersonProfileProvider ..|> ProfileProvider
+MissionResourceHierarchyProvider ..|> ResourceHierarchyProvider
+
+note bottom of MissionResourceHierarchyProvider
+  ACTIVITY → OBJECTIVE → (ASSIGNMENT | MISSION)
+  ASSIGNMENT → MISSION → MISSION:*
+  BADGE/PERSON/GROUP → TYPE:*
+  radici di tipo ASSIGNMENT/OBJECTIVE/ACTIVITY → MISSION:*
+  SYSTEM:global e radici → nessun padre
+end note
+
+note bottom of AclService
+  Seeding default MissionManager: MANAGE_ACL al creatore
+  (soglia universale) per MISSION, ASSIGNMENT, BADGE.
+  Bootstrap: entry-soglia ALLOW <op> PUBLIC level<=L su
+  SYSTEM:global e radici di tipo (lettura/scrittura/admin).
+end note
+
+@enduml

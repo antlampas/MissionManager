@@ -1,0 +1,73 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Assegnazioni — Mission Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-header__title">Assegnazioni</h1>
+  <p class="page-header__meta">Missioni effettivamente assegnate e relative esecuzioni</p>
+  <div class="page-header__actions">
+    <a href="{{ url_for('mission_web.new_assignment_form') }}" class="btn btn-primary">
+      ＋ Nuova assegnazione
+    </a>
+  </div>
+</div>
+
+{% if assigned %}
+  {% for entry in assigned %}
+  <div class="card">
+    <div class="card__header">
+      <h2 class="card__title">
+        <a href="{{ url_for('mission_web.get_mission', id=entry.mission.id) }}">
+          {{ entry.mission.title }}
+        </a>
+      </h2>
+      <span class="text-muted text-sm">
+        {{ entry.assignments | length }} assegnazion{{ 'e' if entry.assignments | length == 1 else 'i' }}
+      </span>
+    </div>
+
+    <ul class="objective-list">
+      {% for a in entry.assignments %}
+      <li class="objective-item" data-assignment-id="{{ a.id }}">
+        <div class="objective-item__header">
+          <h3 class="objective-item__title">
+            <a href="{{ url_for('mission_web.get_assignment', id=a.id) }}">
+              {% if a.assignee_type == 'PERSON' and a.assignee_id %}
+                {{ person_names.get(a.assignee_id) or (a.assignee_id[:8] ~ '…') }}
+              {% elif a.assignee_type == 'GROUP' and a.assignee_id %}
+                Gruppo {{ a.assignee_id[:8] }}…
+              {% else %}
+                Non assegnato ({{ a.id[:8] }}…)
+              {% endif %}
+            </a>
+          </h3>
+          <div style="display:flex;gap:.5rem;align-items:center;">
+            {% if a.outcome %}
+              <span class="outcome-badge outcome-badge--{{ a.outcome }}">{{ a.outcome }}</span>
+            {% endif %}
+            <span class="status-badge status-badge--{{ a.status }}">{{ a.status }}</span>
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state__icon" aria-hidden="true">🗂️</div>
+    <h2 class="empty-state__title">Nessuna assegnazione</h2>
+    <p class="empty-state__desc">Nessuna missione è stata ancora assegnata.</p>
+    <div style="margin-top:1rem;">
+      <a href="{{ url_for('mission_web.new_assignment_form') }}" class="btn btn-primary">
+        ＋ Crea la prima assegnazione
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,59 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Nuovo gruppo — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_groups') }}">Gruppi</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">Nuovo gruppo</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">Nuovo gruppo</h1>
+  <p class="page-header__meta">
+    Indica il nome del gruppo e, se serve, qualifica la zona operativa.
+  </p>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+<form data-form="group-create"
+      data-endpoint="{{ url_for('mission_web.create_group') }}"
+      data-redirect="{{ url_for('mission_web.list_groups') }}">
+  <div class="card">
+    <div class="form-group">
+      <label class="form-label form-label--required" for="name">Nome gruppo</label>
+      <input class="form-control" type="text" id="name" data-json="name"
+             placeholder="es. Squadra Alpha">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="zone_type">Tipo zona</label>
+      <select class="form-control" id="zone_type" data-json="zone_type">
+        <option value="GEOGRAPHIC">Geografica</option>
+        <option value="VIRTUAL" selected>Virtuale</option>
+      </select>
+    </div>
+
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label" for="zone_description">Descrizione zona</label>
+      <input class="form-control" type="text" id="zone_description"
+             data-json="zone_description" data-json-optional
+             placeholder="Descrizione opzionale della zona">
+    </div>
+  </div>
+
+  <div class="page-header__actions">
+    <button type="submit" class="btn btn-primary btn-lg" data-submit>Crea gruppo</button>
+    <a href="{{ url_for('mission_web.list_groups') }}" class="btn btn-secondary">Annulla</a>
+  </div>
+</form>
+
+{% endblock %}

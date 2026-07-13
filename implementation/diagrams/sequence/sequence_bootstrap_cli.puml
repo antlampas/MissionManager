@@ -1,0 +1,62 @@
+@startuml sequence_bootstrap_cli
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Bootstrap CLI - identita, plugin ed estensioni
+participant ":bootstrap_cli.py" as BOOT
+participant "ConfigLoader" as CFG
+participant "PersonRepository" as PREPO
+participant "Services" as SVCS
+participant "CliOperatorIdentityAdapter" as IDA
+participant "PluginTrustRegistry" as PTR
+participant "PluginLoader" as PL
+participant "PluginRegistry" as PR
+participant "InstalledManifestRegistry" as IMR
+participant "ExtensionLoader" as EL
+participant "ExtensionRegistry" as ER
+participant "CLIApp\nClick" as CLI
+
+BOOT -> CFG: load()
+CFG --> BOOT: persistence, security,\nplugins, extensions, operator_id
+BOOT -> PREPO: costruisce backend person/group\nlocal o OIDC
+BOOT -> SVCS: costruisce service core\ncome bootstrap REST
+
+== Identita CLI ==
+BOOT -> IDA: new CliOperatorIdentityAdapter(config, PREPO)
+alt identity_mode == user
+  IDA -> PREPO: get(operator_id)
+  PREPO --> IDA: Person con Profile ACL
+else anonymous
+  IDA --> BOOT: profilo anonimo implicito
+end
+
+== Plugin ==
+BOOT -> PTR: new PluginTrustRegistry(path)
+BOOT -> PL: new PluginLoader(scan_paths, PTR)
+BOOT -> PL: load_all()
+PL --> BOOT: MissionHook[]
+BOOT -> PR: new PluginRegistry(PTR)
+BOOT -> PR: register(hook)*
+BOOT -> SVCS: inietta PluginRegistry nei service
+
+== Estensioni ==
+BOOT -> IMR: new InstalledManifestRegistry(path)
+BOOT -> EL: new ExtensionLoader(scan_paths, IMR,\nservices=SVCS)
+BOOT -> EL: load_all()
+EL --> BOOT: MissionExtension[]
+BOOT -> ER: new ExtensionRegistry()
+BOOT -> ER: register(extension)*
+
+== CLI ==
+BOOT -> CLI: create_cli(SVCS, IDA, auth_policy, ER)
+CLI -> CLI: registra comandi core\nmission, assignment, activity, badge, person, acl
+CLI -> ER: list()
+ER --> CLI: ExtensionManifest[]
+CLI -> CLI: registra comandi dinamici\nmanifest.provides_commands
+note right of CLI
+  I comandi estensione chiamano
+  ExtensionRegistry.execute(ext_id,
+  ExtensionRequest(operator_id, params, body)).
+  L'enforcement ACL rimane nei decorator
+  e nei service core invocati dall'estensione.
+end note
+CLI --> BOOT: click group pronto
+@enduml

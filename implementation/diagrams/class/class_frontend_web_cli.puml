@@ -1,0 +1,346 @@
+@startuml class_frontend_web_cli
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Layer 5 — Web App (Quart) e CLI (Click)
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+skinparam class {
+  BackgroundColor<<web>>     #E8F8F5
+  BorderColor<<web>>         #1A9850
+
+  BackgroundColor<<cli>>     #FEF9E7
+  BorderColor<<cli>>         #D4AC0D
+
+  BackgroundColor<<extern>>  #EEEEEE
+  BorderColor<<extern>>      #AAAAAA
+}
+
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+
+' ══════════════════════════════════════════
+' Web App (Quart)
+' ══════════════════════════════════════════
+
+class create_web_blueprint <<web factory>> {
+  +create_web_blueprint(svcs, auth_policy, identity_provider, auth_service, ...) Blueprint
+  .. registra sul blueprint ..
+  route Web (lista/dettaglio + creazione) e /setup
+  ACLMiddleware, RealtimeNotifier (/ws), /static
+  error handler eccezioni di dominio -> JSON
+}
+
+class ACLMiddleware <<web>> {
+  -_identity_provider: OperatorIdentityProvider
+  -_auth_policy: AuthorizationPolicy
+  -_endpoint_acl: dict[endpoint, (Operation, tipo, view-arg) | SERVICE_ENFORCED]
+  +async check_acl() [before_request]
+}
+
+class RealtimeNotifier <<web>> {
+  -_connected: set[Connection]
+  +async connect(conn: Connection) void
+  +async disconnect(conn: Connection) void
+  +async broadcast(event: str, data: dict) void
+  +async on_assignment_status_change(assignment_id: str, new_status: str) void
+  +async on_activity_status_change(activity_id: str, new_status: str) void
+}
+
+class MissionRouteHandler <<web>> {
+  -_mission_svc: MissionService
+  +async list_missions() Response
+  +async new_mission_form() Response
+  +async create_mission() Response
+  +async get_mission(id: str) Response
+  +async delete_mission(id: str) Response
+  .. solo blueprint (immutabile): nessuna ..
+  .. assegnazione né aggiunta obiettivi ..
+}
+
+class AssignmentRouteHandler <<web>> {
+  -_assignment_svc: AssignmentService
+  -_notifier: RealtimeNotifier
+  -_badge_svc: BadgeService
+  -_person_svc: PersonService
+  -_mission_svc: MissionService
+  .. pagina dedicata alle assegnazioni ..
+  +async list_assignments_page() Response
+  +async new_assignment_form() Response
+  +async create_assignment_global() Response
+  .. dettaglio assignment ..
+  +async get_assignment(id: str) Response
+  +async assign_assignment(id: str) Response
+  +async update_assignment_status(id: str) Response
+  +async award_badge(id: str) Response
+}
+
+class ObjectiveRouteHandler <<web>> {
+  -_assignment_svc: AssignmentService
+  +async get_objective(id: str) Response
+  +async list_activities(id: str) Response
+}
+
+class AclRouteHandler <<web>> {
+  -_acl_svc: AclService
+  -_person_svc: PersonService
+  .. pagina /acl: profili + entry ..
+  +async get_page() Response
+  +async set_profile() Response
+  +async remove_profile_group() Response
+  +async create_entry() Response
+  +async delete_entry(entry_id) Response
+}
+
+class ActivityRouteHandler <<web>> {
+  -_activity_svc: ActivityService
+  -_notifier: RealtimeNotifier
+  +async get_activity(id: str) Response
+  +async update_activity_status(id: str) Response
+  +async assign_to_activity(id: str) Response
+}
+
+' ══════════════════════════════════════════
+' CLI (Click)
+' ══════════════════════════════════════════
+
+class CLIApp <<cli>> {
+  +cli() [Click group radice con @click.pass_context]
+  +setup_services(ctx: Context) void
+}
+
+class OutputFormatter <<cli>> {
+  {static} +mission_table(missions: list[MissionDTO]) str
+  {static} +assignment_detail(dto: AssignmentDTO) str
+  {static} +badge_award(dto: BadgeAwardDTO) str
+  {static} +json_output(data: Any) str
+  {static} +success(msg: str) void
+  {static} +error(msg: str) void
+}
+
+class MissionCommands <<cli>> {
+  +create() [click.command, @require_acl]
+  +get() [click.command, @require_acl]
+  +list() [click.command, @require_acl]
+  +delete() [click.command, @require_acl]
+}
+
+class AssignmentCommands <<cli>> {
+  +create() [click.command, @require_acl]
+  +assign() [click.command, @require_acl]
+  +get() [click.command, @require_acl]
+  +list() [click.command, @require_acl]
+  +set_status() [click.command, @require_acl]
+  +badge() [click.command, @require_acl]
+}
+
+class ActivityCommands <<cli>> {
+  +get() [click.command, @require_acl]
+  +assign_to() [click.command, @require_acl]
+  +unassign() [click.command, @require_acl]
+  +set_status() [click.command, @require_acl]
+}
+
+class BadgeCommands <<cli>> {
+  +create() [click.command, @require_acl]
+  +get() [click.command, @require_acl]
+  +list() [click.command, @require_acl]
+  +list_by_person() [click.command, @require_acl]
+}
+
+class PersonCommands <<cli>> {
+  +add() [click.command, @require_acl]
+  +update() [click.command, @require_acl]
+  +remove() [click.command, @require_acl]
+  +get() [click.command, @require_acl]
+  +list() [click.command, @require_acl]
+  +list_by_group() [click.command, @require_acl]
+  +group_add() [click.command, @require_acl]
+  +group_remove() [click.command, @require_acl]
+  +group_list() [click.command, @require_acl]
+  +group_show() [click.command, @require_acl]
+}
+
+' ── Extern stubs ─────────────────────────────────────────────
+class MissionService <<extern>>
+class AssignmentService <<extern>>
+class ActivityService <<extern>>
+class BadgeService <<extern>>
+class PersonService <<extern>>
+class AclService <<extern>>
+class AuthorizationPolicy <<extern>>
+class OperatorIdentityProvider <<extern>>
+class ExtensionRegistry <<extern>>
+
+' ── Relazioni Web ────────────────────────────────────────────
+create_web_blueprint --> ACLMiddleware
+create_web_blueprint --> RealtimeNotifier
+create_web_blueprint --> MissionRouteHandler
+create_web_blueprint --> AssignmentRouteHandler
+create_web_blueprint --> ObjectiveRouteHandler
+create_web_blueprint --> ActivityRouteHandler
+create_web_blueprint --> AclRouteHandler
+
+ACLMiddleware --> OperatorIdentityProvider
+ACLMiddleware --> AuthorizationPolicy
+
+MissionRouteHandler --> MissionService
+AssignmentRouteHandler --> AssignmentService
+AssignmentRouteHandler --> RealtimeNotifier
+AssignmentRouteHandler --> MissionService
+AssignmentRouteHandler --> PersonService
+AssignmentRouteHandler --> BadgeService
+ObjectiveRouteHandler --> AssignmentService
+AclRouteHandler --> AclService
+AclRouteHandler --> PersonService
+ActivityRouteHandler --> ActivityService
+ActivityRouteHandler --> RealtimeNotifier
+
+' ── Relazioni CLI ────────────────────────────────────────────
+CLIApp --> MissionCommands
+CLIApp --> AssignmentCommands
+CLIApp --> ActivityCommands
+CLIApp --> BadgeCommands
+CLIApp --> PersonCommands
+CLIApp ..> ExtensionRegistry : list() → registra comandi al bootstrap
+
+MissionCommands --> MissionService
+MissionCommands --> OutputFormatter
+AssignmentCommands --> AssignmentService
+AssignmentCommands --> BadgeService
+AssignmentCommands --> OutputFormatter
+ActivityCommands --> ActivityService
+ActivityCommands --> OutputFormatter
+BadgeCommands --> BadgeService
+BadgeCommands --> OutputFormatter
+PersonCommands --> PersonService
+PersonCommands --> OutputFormatter
+
+' ── Note Web ─────────────────────────────────────────────────
+note right of create_web_blueprint
+  Factory (non una classe): restituisce un
+  Blueprint Quart, montato da create_web_app()
+  in bootstrap/web.py. Tutte le route sono
+  async/await. Espone il canale WebSocket (/ws)
+  collegato a RealtimeNotifier, il setup primo
+  avvio (/setup) e i form di creazione (app.js).
+  L'app Quart è creata con static_folder=None
+  per non oscurare la route /static del blueprint.
+end note
+
+note right of ACLMiddleware
+  before_request hook asincrono registrato
+  su Quart. Risolve l'operatore via
+  OperatorIdentityProvider (assente →
+  profilo anonimo implicito), mappa
+  l'endpoint su (Operation, ResourceRef)
+  con _WEB_ENDPOINT_ACL e verifica via
+  AuthorizationPolicy.is_allowed().
+  DENIED → redirect /login (anonimo,
+  pagine), 401 (anonimo, mutazioni),
+  403 (autenticato).
+  Endpoint SERVICE_ENFORCED (entry ACL):
+  sola autenticazione, autorizzazione
+  in AclService (MANAGE_ACL).
+end note
+
+note right of RealtimeNotifier
+  Broadcast WebSocket a tutte le connessioni
+  aperte; se una connessione fallisce viene
+  rimossa dal set _connected.
+  on_assignment_status_change() chiamato da
+  AssignmentRouteHandler dopo update_status.
+  on_activity_status_change() chiamato da
+  ActivityRouteHandler dopo update_status.
+end note
+
+note right of AssignmentRouteHandler
+  update_assignment_status() chiama
+  notifier.on_assignment_status_change()
+  dopo la risposta del service, per
+  aggiornamenti push ai client connessi.
+  --
+  Possiede la pagina dedicata /assignments
+  (scorporata dalla missione):
+  list_assignments_page() elenca le missioni
+  effettivamente assegnate; create_assignment_global()
+  riceve mission_id nel body (POST /assignments).
+  get_assignment() delega ad
+  AssignmentService.list_activity_candidates()
+  il calcolo dei candidati per attività
+  (perimetro §2.4 nel layer applicativo) e li
+  passa al template per l'assegnazione inline.
+end note
+
+note right of ActivityRouteHandler
+  update_activity_status() chiama
+  notifier.on_activity_status_change()
+  dopo la risposta del service, per
+  aggiornamenti push ai client connessi.
+end note
+
+' ── Note CLI ─────────────────────────────────────────────────
+note right of CLIApp
+  cli() è il gruppo Click radice
+  decorato con @click.pass_context.
+  setup_services(ctx): configura i service
+  nel contesto Click (ctx.obj); verifica
+  l'operatore via PersonRepository.get()
+  all'avvio. I comandi estensioni vengono
+  registrati dinamicamente da
+  ExtensionRegistry.list() al bootstrap.
+end note
+
+note right of OutputFormatter
+  Classe di utilità stateless.
+  mission_table(): tabella ASCII per
+  la lista delle missioni.
+  assignment_detail(): vista dettagliata
+  di un MissionAssignment con obiettivi
+  e attività.
+  badge_award(): rappresentazione testuale
+  di un BadgeAwardDTO con recipients.
+  success()/error(): output colorato
+  su stdout/stderr.
+end note
+
+note right of MissionCommands
+  Gruppo Click "mission".
+  @require_acl(operation, resource_type?,
+  resource_param?): decorator (in _utils,
+  modulo foglia, per evitare l'import circolare
+  app<->commands). Mappa il comando su
+  (Operation, ResourceRef) — risorsa concreta
+  dall'argomento, radice di tipo per gli elenchi,
+  SYSTEM:global per le creazioni — e verifica
+  AuthorizationPolicy.is_allowed; se DENIED,
+  stampa errore ed esce (exit 1).
+end note
+
+note right of AssignmentCommands
+  Gruppo Click "assignment".
+  set_status(): applica la macchina a
+  stati; valori ammessi determinati
+  dalla logica di dominio.
+  badge(): chiama BadgeService.award_to_assignment()
+  e stampa i recipients notificati.
+end note
+
+note right of PersonCommands
+  Gruppo Click "person".
+  add --nickname <n> [--nickname <n>...]
+    (profilo ACL al minimo privilegio)
+  update <id> [--nickname ...]
+  set-acl <id> [--acl-level <int>]
+    [--acl-group <str> ...]  → MANAGE_PROFILES
+  remove <id>
+  list / get <id> / group-members <gid>
+  group-add [--name <str>] / group-remove <gid>
+  group-list
+  Ogni comando è gated da @require_acl.
+  Il gruppo Click "acl" (AclCommands: list/
+  add/remove) gestisce le AclEntry, con
+  autorizzazione in AclService (MANAGE_ACL).
+end note
+
+@enduml

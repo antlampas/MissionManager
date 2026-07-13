@@ -1,0 +1,18 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Errore — Mission Manager{% endblock %}
+
+{% block content %}
+<div class="empty-state" style="margin-top:3rem;">
+  <div class="empty-state__icon" aria-hidden="true">⚠</div>
+  <h2 class="empty-state__title">Si è verificato un errore</h2>
+  <p class="empty-state__desc">{{ message }}</p>
+  <div style="margin-top:1.5rem;">
+    <a href="{{ url_for('mission_web.list_missions') }}" class="btn btn-primary">
+      Torna alla home
+    </a>
+  </div>
+</div>
+{% endblock %}

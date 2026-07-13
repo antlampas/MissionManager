@@ -1,0 +1,62 @@
+@startuml uc_crea_missione
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Caso d'Uso — Creazione di una nuova missione (blueprint)
+left to right direction
+
+actor "Gestore Missioni" as GM
+actor "Sistema Plugin" as PLUG
+
+rectangle "MissionManager" {
+  usecase "Creare nuova missione" as UC_CREA
+  usecase "Definire obiettivi del blueprint" as UC_OBJ
+  usecase "Definire attività per obiettivo" as UC_ACT
+  usecase "Validare dati missione" as UC_VALID
+  usecase "Eseguire hook BEFORE_CREATE_MISSION" as UC_BEFORE
+  usecase "Eseguire hook AFTER_CREATE_MISSION" as UC_AFTER
+}
+
+GM --> UC_CREA
+PLUG --> UC_BEFORE
+PLUG --> UC_AFTER
+
+UC_CREA ..> UC_VALID : <<include>>
+UC_CREA ..> UC_OBJ : <<include>>
+UC_OBJ ..> UC_ACT : <<include>>
+UC_BEFORE ..> UC_CREA : <<extend>>
+UC_AFTER ..> UC_CREA : <<extend>>
+
+note right of UC_CREA
+  MissionService.create(title, desc, objectives).
+  Crea il blueprint: template strutturale privo di
+  stato attivo. AssignmentPolicy di default:
+  AssignmentPolicy.unlimited() (nessun limite).
+  La missione operativa nasce con la creazione di
+  un MissionAssignment tramite AssignmentService.
+end note
+
+note right of UC_OBJ
+  Almeno un obiettivo obbligatorio.
+  Ogni obiettivo deve contenere
+  almeno un'attività.
+end note
+
+note right of UC_ACT
+  Le attività del blueprint nascono in stato
+  neutro, senza assegnatari né stato attivo.
+  Vengono replicate da AssignmentService
+  al momento dell'assegnazione.
+end note
+
+note right of UC_BEFORE
+  Condizionale: solo se PluginRegistry è presente.
+  Un hook può impostare ctx.abort=True per bloccare
+  l'operazione → OperationAbortedError.
+end note
+
+note right of UC_AFTER
+  Eseguito dopo la persistenza.
+  Le eccezioni degli hook sono catturate e loggate,
+  mai propagate al chiamante.
+end note
+
+@enduml

@@ -1,0 +1,176 @@
+@startuml class_plugin
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Sistema Plugin Unificato
+skinparam classAttributeIconSize 0
+
+enum HookPoint {
+  BEFORE_CREATE_MISSION
+  AFTER_CREATE_MISSION
+  BEFORE_CREATE_ASSIGNMENT
+  AFTER_CREATE_ASSIGNMENT
+  BEFORE_UPDATE_STATUS
+  AFTER_UPDATE_STATUS
+  BEFORE_AWARD_BADGE
+  AFTER_AWARD_BADGE
+}
+
+enum PluginTrustLevel {
+  TRUSTED
+  SANDBOXED
+}
+
+class PluginManifest <<value object>> {
+  +id: str
+  +name: str
+  +version: str
+  +description: str
+  +hooks: list<HookPoint|str>
+  +trust_level: PluginTrustLevel
+  +priority: int
+  +code_checksum: str
+}
+
+class HookContext <<value object>> {
+  +hook_point: HookPoint|str
+  +operator_id: UUID?
+  +payload: dict
+  +result: Any
+  +subject: Any?
+  +abort: bool
+  +abort_reason: str?
+  +user_message: str?
+}
+
+class ScopedHookContext <<value object>> {
+  +hook_point: HookPoint|str
+  +operator_id: UUID?
+  +payload: dict
+  +result: Any
+  +subject: Any?
+  +abort: bool
+  +abort_reason: str?
+  +user_message: str?
+}
+
+interface MissionHook <<port>> {
+  +manifest: PluginManifest
+  +execute(context: HookContext): void
+}
+
+abstract class MissionHookAdapter <<adapter>> {
+  +manifest: PluginManifest
+  +execute(context: HookContext): void
+}
+
+class PluginTrustEntry <<value object>> {
+  +plugin_id: str
+  +trust_level: PluginTrustLevel
+  +manifest_checksum: str
+  +code_checksum: str
+}
+
+class PluginTrustRegistry <<infrastructure>> {
+  -_entries: dict<str, PluginTrustEntry>
+  +reload(): void
+  +get(plugin_id): PluginTrustLevel?
+  +get_level(plugin_id): PluginTrustLevel?
+  +get_entry(plugin_id): PluginTrustEntry?
+  +has_entry(plugin_id): bool
+  +is_empty(): bool
+}
+
+class PluginLoader <<infrastructure>> {
+  -_scan_paths: list<str>
+  -_trust: PluginTrustRegistry
+  +load_all(): list<MissionHook>
+  +load_into(registry: PluginRegistry): void
+}
+
+class PluginRegistry <<service>> {
+  -_trust: PluginTrustRegistry?
+  -_hooks: dict<HookPoint|str, list<MissionHook>>
+  +register(hook: MissionHook): void
+  +unregister(plugin_id: str): void
+  +fire(point, context: HookContext): HookContext
+  +list_plugins(): list<PluginManifest>
+}
+
+class MissionService
+class AssignmentService
+class ActivityService
+class BadgeService
+class PersonService
+
+class StatusValidatorPlugin <<example>>
+class NotifyOnCreatePlugin <<example>>
+class BadgeNotifierPlugin <<example>>
+
+PluginManifest --> HookPoint
+PluginManifest --> PluginTrustLevel
+HookContext --> HookPoint
+MissionHook --> PluginManifest
+MissionHook ..> HookContext
+MissionHookAdapter ..|> MissionHook
+ScopedHookContext ..> HookContext : copia difensiva
+PluginTrustRegistry o-- PluginTrustEntry
+PluginTrustEntry --> PluginTrustLevel
+PluginLoader --> PluginTrustRegistry
+PluginLoader --> MissionHook : importa bundle approvati
+PluginRegistry o-- MissionHook
+PluginRegistry --> PluginTrustRegistry
+PluginRegistry ..> ScopedHookContext
+
+MissionService --> PluginRegistry
+AssignmentService --> PluginRegistry
+ActivityService --> PluginRegistry
+BadgeService --> PluginRegistry
+PersonService --> PluginRegistry
+
+StatusValidatorPlugin ..|> MissionHook
+NotifyOnCreatePlugin ..|> MissionHook
+BadgeNotifierPlugin ..|> MissionHook
+
+note right of PluginLoader
+  Ogni plugin installabile e' un bundle:
+    <scan_path>/<plugin_id>/manifest.json
+    <scan_path>/<plugin_id>/plugin.py
+
+  Il loader legge manifest.json senza eseguire codice,
+  verifica manifest_checksum e code_checksum contro
+  PluginTrustRegistry, converte gli hook stringa in
+  HookPoint e importa plugin.py solo dopo il successo.
+
+  I file .py flat non sono caricabili.
+end note
+
+note right of PluginRegistry
+  register() usa manifest.id, non manifest.name.
+  fire() esegue in priority decrescente.
+
+  TRUSTED riceve HookContext reale e puo' propagare
+  result, user_message e abort nei BEFORE_*.
+  SANDBOXED riceve ScopedHookContext senza contenuti
+  sensibili; ogni mutazione prodotta viene ignorata.
+
+  Le eccezioni AFTER_* sono catturate e loggate,
+  senza propagazione al service chiamante.
+end note
+
+note bottom of StatusValidatorPlugin
+  id: status-validator
+  Hook: BEFORE_UPDATE_STATUS
+  Valida transizioni operative specifiche del deployment.
+end note
+
+note bottom of NotifyOnCreatePlugin
+  id: notify-on-create
+  Hook: AFTER_CREATE_MISSION
+  Side effect di notifica dopo persistenza missione.
+end note
+
+note bottom of BadgeNotifierPlugin
+  id: badge-notifier
+  Hook: AFTER_AWARD_BADGE
+  Notifica assegnazioni badge completate.
+end note
+@enduml

@@ -1,0 +1,64 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Gruppi — Mission Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-header__title">Gruppi</h1>
+  <p class="page-header__meta">Squadre e zone operative</p>
+  <div class="page-header__actions">
+    <a href="{{ url_for('mission_web.new_group_form') }}" class="btn btn-primary">
+      ＋ Nuovo gruppo
+    </a>
+  </div>
+</div>
+
+{% if groups %}
+  <div class="card" style="padding:0;">
+    <div class="table-wrapper">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th>Tipo zona</th>
+            <th>Descrizione zona</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in groups %}
+          <tr>
+            <td>
+              <a href="{{ url_for('mission_web.get_group', id=g.id) }}">
+                {{ g.name or ('Gruppo ' ~ g.id[:8] ~ '…') }}
+              </a>
+            </td>
+            <td>{{ g.zone_type or '—' }}</td>
+            <td class="text-muted text-sm">{{ g.zone_description or '—' }}</td>
+            <td class="text-right">
+              <a href="{{ url_for('mission_web.get_group', id=g.id) }}"
+                 class="btn btn-secondary btn-sm">Dettaglio →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state__icon" aria-hidden="true">👥</div>
+    <h2 class="empty-state__title">Nessun gruppo</h2>
+    <p class="empty-state__desc">Non ci sono ancora gruppi configurati.</p>
+    <div style="margin-top:1rem;">
+      <a href="{{ url_for('mission_web.new_group_form') }}" class="btn btn-primary">
+        ＋ Crea il primo gruppo
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,20 @@
+{
+  "badge-notifier": {
+    "trust_level": "TRUSTED",
+    "manifest_checksum": "sha256:63836fdc487ba6e94ace889b57b91f77894072f62d18215b18bd0db1a63964b3",
+    "code_checksum": "sha256:545da50155b95068ffbafd5b6dfbcbf101274362712068a40c260d19097df46a",
+    "license": "CC-BY-SA-4.0"
+  },
+  "notify-on-create": {
+    "trust_level": "SANDBOXED",
+    "manifest_checksum": "sha256:bc94923b8f8d4283a779fab275c5876c22b4f40cfb9c5d67ce1d2c0c7af6d87e",
+    "code_checksum": "sha256:4c8f56e9626dce4f30c6f46628c63c0105776ec2b1cb9e4c09adb8d2c17816c6",
+    "license": "CC-BY-SA-4.0"
+  },
+  "status-validator": {
+    "trust_level": "TRUSTED",
+    "manifest_checksum": "sha256:b4ef25f956d5fd5a72b20dc0c854fb3036527ea31079653a787ee4e32c436f12",
+    "code_checksum": "sha256:ffaa985338bf5c36bb8e0b896761db20c7900128fc5f05723672b2f75dd9d97b",
+    "license": "CC-BY-SA-4.0"
+  }
+}

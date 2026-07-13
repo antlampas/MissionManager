@@ -1,0 +1,47 @@
+@startuml sequence_acl_decision
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Implementazione - Enforcement ACL al confine (REST)
+
+participant "Client" as C
+participant "AuthMiddleware" as MW
+participant "RestOperatorIdentityAdapter" as ID
+participant "AuthorizationPolicy" as POL
+participant "PersonProfileProvider" as PROF
+participant "SqlAlchemyAclEntryRepository" as REPO
+participant "MissionResourceHierarchyProvider" as HIER
+participant "Router / Service" as R
+
+C -> MW : DELETE /api/missions/<id>\n(Bearer token)
+MW -> ID : get_current_operator()
+alt token valido
+  ID --> MW : Person
+else token assente/invalid
+  ID --> MW : AuthenticationError
+  note right of MW : operator = None\n(profilo anonimo implicito)
+end
+
+MW -> MW : _resolve_check(rule, method, view_args)\n→ (DELETE, MISSION:<id>)
+MW -> POL : is_allowed(principal, DELETE, MISSION:<id>)
+activate POL
+POL -> PROF : profile_of(principal)
+PROF --> POL : Profile(level, groups∪{"public"})
+POL -> REPO : list_for(MISSION:<id>, DELETE)
+REPO --> POL : []  (nessuna entry propria)
+POL -> HIER : parents_of(MISSION:<id>)
+HIER --> POL : [MISSION:*]
+POL -> REPO : list_for(MISSION:*, DELETE)
+REPO --> POL : [ALLOW PUBLIC level<=50]
+POL -> POL : match + precedenza\nDENY > ALLOW > default-deny
+POL --> MW : True / False
+deactivate POL
+
+alt ALLOWED
+  MW -> R : prosegue (g.operator impostato)
+  R --> C : 200/204
+else DENIED, operator None
+  MW --> C : 401 + WWW-Authenticate
+else DENIED, autenticato
+  MW --> C : 403 {"error": "Accesso negato dalle ACL"}
+end
+
+@enduml

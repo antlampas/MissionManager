@@ -1,0 +1,98 @@
+@startuml seq_badge_completamento
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Sequenza: Assegnazione Badge al Completamento di un MissionAssignment
+
+actor "Gestore Missioni" as GM
+participant "AssignmentRouter\n(REST)" as Router
+participant "AuthMiddleware" as Auth
+participant "BadgeService" as BS
+participant "MissionAssignmentRepository" as AR
+participant "BadgeRepository" as BR
+participant "BadgeAwardRepository" as BAR
+participant "PersonRepository" as PRep
+database "Persistenza" as STORE
+participant "PluginRegistry\n(services)" as PR
+
+GM -> Router : POST /assignments/<aid>/badge\n{ "badge_id": "<bid>" }
+activate Router
+
+Router -> Auth : is_allowed(operatore, AWARD_BADGE, ASSIGNMENT:<id>)
+activate Auth
+Auth --> Router : OK
+deactivate Auth
+
+Router -> BS : award_to_assignment(badge_id, assignment_id)
+activate BS
+
+BS -> AR : get(assignment_id)
+activate AR
+AR -> STORE : recupera assignment
+STORE --> AR : dati assignment
+AR --> BS : MissionAssignment
+deactivate AR
+
+BS -> BS : verifica assignment.status == COMPLETED
+note right : Solleva ValidationError\nse status ≠ COMPLETED
+
+BS -> BR : get(badge_id)
+activate BR
+BR -> STORE : recupera definizione badge
+STORE --> BR : dati badge
+BR --> BS : Badge
+deactivate BR
+
+BS -> BAR : exists_for_target(ASSIGNMENT, assignment_id)
+activate BAR
+BAR -> STORE : verifica assegnazione esistente
+STORE --> BAR : bool
+BAR --> BS : bool
+deactivate BAR
+
+break BadgeAward gia' presente per il target
+  BS --> Router : ValidationError
+  Router --> GM : 400 Bad Request
+end
+
+BS -> PR : fire(BEFORE_AWARD_BADGE, ctx)
+note right of PR : ctx.payload = {badge_id, assignment_id}
+
+break ctx.abort == true
+  BS --> Router : OperationAbortedError
+  Router --> GM : 422 Unprocessable Entity
+end
+
+BS -> BS : crea BadgeAward indipendente\n(badge_id, target, awarded_at)
+
+alt assignment.assignee_type == GROUP
+  BS -> PRep : get_by_group(assignee_id)
+  activate PRep
+  PRep -> STORE : recupera Person del gruppo
+  STORE --> PRep : List[Person]
+  PRep --> BS : List[Person]
+  deactivate PRep
+  BS -> BS : estrae UUID da List[Person]
+else assignment.assignee_type == PERSON
+  BS -> BS : destinatario = [assignment.assignee_id]
+end
+
+loop per ogni person_id destinatario
+  BS -> BS : aggiungi person_id ai destinatari
+end
+
+BS -> BAR : save(BadgeAward)
+activate BAR
+BAR -> STORE : persisti assegnazione e destinatari
+STORE --> BAR : ok
+BAR --> BS : BadgeAward
+deactivate BAR
+
+BS -> PR : fire(AFTER_AWARD_BADGE, ctx)
+note right of PR : ctx.result = {badge_award, recipients_count}
+
+BS --> Router : BadgeAwardDTO\n{ badge, target_type, target_id,\n  recipients_count: N }
+deactivate BS
+
+Router --> GM : 200 OK\n{ "badge": {...},\n  "awarded_to": N,\n  "recipients": [...] }
+deactivate Router
+
+@enduml

@@ -1,0 +1,75 @@
+@startuml uc_visualizza_missione
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Caso d'Uso — Visualizzazione dei dettagli di una missione
+left to right direction
+
+actor "Gestore Missioni" as GM
+
+rectangle "MissionManager" {
+  usecase "Visualizzare dettagli\nblueprint missione" as UC_GET_MISSION
+  usecase "Visualizzare obiettivi\ndel blueprint" as UC_GET_OBJ
+  usecase "Visualizzare assignment\ndella missione" as UC_LIST_ASSIGN
+  usecase "Visualizzare dettagli\nMissionAssignment" as UC_GET_ASSIGN
+  usecase "Visualizzare attività\ndi un obiettivo" as UC_LIST_ACT
+  usecase "Calcolare esito derivato\n(Objective / Assignment)" as UC_OUTCOME
+}
+
+GM --> UC_GET_MISSION
+GM --> UC_LIST_ASSIGN
+GM --> UC_GET_ASSIGN
+
+UC_GET_MISSION ..> UC_GET_OBJ : <<include>>
+UC_GET_ASSIGN ..> UC_LIST_ACT : <<include>>
+UC_GET_ASSIGN ..> UC_OUTCOME : <<include>>
+UC_GET_OBJ ..> UC_OUTCOME : <<extend>>
+
+note right of UC_GET_MISSION
+  MissionService.get(mission_id).
+  Restituisce MissionDTO con i campi:
+  id, title, description, assignment_policy,
+  objectives: list[ObjectiveDTO].
+  Solleva NotFoundError se la missione
+  non esiste.
+end note
+
+note right of UC_GET_OBJ
+  Incluso in UC_GET_MISSION: gli obiettivi
+  del blueprint sono restituiti embedded
+  nel MissionDTO (ObjectiveDTO annidati).
+  Disponibile anche separatamente tramite
+  GET /missions/<id>/objectives.
+end note
+
+note right of UC_LIST_ASSIGN
+  AssignmentService.list(mission_id, filters).
+  Elenca tutti i MissionAssignment
+  associati alla missione.
+  Filtri facoltativi: stato, assegnatario.
+end note
+
+note right of UC_GET_ASSIGN
+  AssignmentService.get(assignment_id).
+  Restituisce AssignmentDTO con i campi:
+  id, mission_id, assignee_type, assignee_id,
+  status, outcome, objectives: list[ObjectiveDTO],
+  badge_award: Optional[BadgeAwardDTO].
+end note
+
+note right of UC_LIST_ACT
+  Incluso in UC_GET_ASSIGN: le attività
+  sono restituite embedded negli ObjectiveDTO
+  annidati nell'AssignmentDTO.
+  Disponibili anche tramite
+  GET /objectives/<id>/activities.
+end note
+
+note right of UC_OUTCOME
+  compute_outcome() è calcolato on-demand:
+  None se le attività non hanno raggiunto
+  uno stato terminale; stringa descrittiva
+  dell'esito (positivo/negativo) altrimenti.
+  Applicato sia a ObjectiveDTO
+  che ad AssignmentDTO.
+end note
+
+@enduml

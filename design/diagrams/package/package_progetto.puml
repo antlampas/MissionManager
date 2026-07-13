@@ -1,0 +1,180 @@
+@startuml package_progetto
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Struttura dei Package - MissionManager
+
+skinparam packageStyle rectangle
+skinparam defaultTextAlignment left
+skinparam ArrowColor #5D6D7E
+skinparam ArrowFontColor #5D6D7E
+skinparam ArrowFontSize 9
+
+skinparam package<<root>> {
+    BackgroundColor #FAFAFA
+    BorderColor     #BDC3C7
+    FontColor       #2C3E50
+    FontStyle       bold
+    StereotypeFontSize 0
+}
+skinparam package<<domain>> {
+    BackgroundColor #D5F5E3
+    BorderColor     #1E8449
+    FontColor       #145A32
+    FontStyle       bold
+    StereotypeFontSize 0
+}
+skinparam package<<ports>> {
+    BackgroundColor #E8F5E9
+    BorderColor     #2E7D32
+    FontColor       #1B5E20
+    FontStyle       bold
+    StereotypeFontSize 0
+}
+skinparam package<<adapter>> {
+    BackgroundColor #D6EAF8
+    BorderColor     #1A5276
+    FontColor       #154360
+    FontStyle       bold
+    StereotypeFontSize 0
+}
+skinparam package<<service>> {
+    BackgroundColor #FDEBD0
+    BorderColor     #CA6F1E
+    FontColor       #784212
+    FontStyle       bold
+    StereotypeFontSize 0
+}
+skinparam package<<frontend>> {
+    BackgroundColor #FFF9DB
+    BorderColor     #D4AC0D
+    FontColor       #7D6608
+    FontStyle       bold
+    StereotypeFontSize 0
+}
+skinparam package<<sub>> {
+    BackgroundColor #FFFFFF
+    BorderColor     #BDC3C7
+    FontColor       #2C3E50
+    StereotypeFontSize 0
+}
+
+package "missionmanager" <<root>> {
+
+  package "domain" as DOMAIN <<domain>> {
+    class Mission
+    class MissionAssignment
+    class Objective
+    class Activity
+    class Badge
+    class BadgeAward
+    class AssignmentPolicy
+    class Person
+    class Group
+    class Zone
+    class Profile
+    class AclEntry
+    enum Status
+    enum AssigneeType
+    enum ZoneType
+    class MissionManagerError
+    class ValidationError
+    class NotFoundError
+    class ACLError
+    class StatusTransitionError
+    class OperationAbortedError
+  }
+
+  package "ports" as PORTS <<ports>> {
+    interface BaseRepository<T>
+    interface MissionRepository
+    interface MissionAssignmentRepository
+    interface ObjectiveRepository
+    interface ActivityRepository
+    interface BadgeRepository
+    interface BadgeAwardRepository
+    interface PersonRepository
+    interface GroupRepository
+    interface OperatorIdentityProvider
+    interface MissionHook
+    abstract MissionExtension
+    enum HookPoint
+    class HookContext
+    class PluginManifest
+    class ExtensionManifest
+    class RouteSpec
+    class CommandSpec
+    class ExtensionRequest
+    class ExtensionResult
+  }
+
+  package "adapters" as ADAPTERS <<adapter>> {
+    abstract RepositoryAdapter<T>
+    abstract PersonRepositoryAdapter
+    abstract GroupRepositoryAdapter
+    abstract OperatorIdentityAdapter
+    abstract MissionHookAdapter
+  }
+
+  package "services" as SERVICES <<service>> {
+    class MissionService
+    class AssignmentService
+    class ActivityService
+    class BadgeService
+    class PersonService
+    class PluginRegistry
+    class ExtensionRegistry
+    class ExtensionLoader
+    class AuthorizationPolicy
+  }
+
+  package "frontends" as FRONTENDS <<frontend>> {
+    package "rest" <<sub>> {
+      class RestApp
+      class AuthMiddleware
+      class ErrorHandler
+      class MissionRouter
+      class AssignmentRouter
+      class ObjectiveRouter
+      class ActivityRouter
+      class BadgeRouter
+      class PersonRouter
+    }
+
+    package "web_app" <<sub>> {
+      class create_web_blueprint
+      class create_web_app
+      class ACLMiddleware
+      class RealtimeNotifier
+      class MissionRouteHandler
+      class AssignmentRouteHandler
+      class ObjectiveRouteHandler
+      class ActivityRouteHandler
+    }
+
+    package "cli" <<sub>> {
+      class CLIApp
+      class MissionCommands
+      class AssignmentCommands
+      class ActivityCommands
+      class BadgeCommands
+      class PersonCommands
+      class OutputFormatter
+    }
+  }
+}
+
+PORTS ..> DOMAIN : dipende da
+ADAPTERS ..> PORTS : implementa
+ADAPTERS ..> DOMAIN : mappa
+SERVICES ..> PORTS : usa contratti
+SERVICES ..> DOMAIN : usa modello
+FRONTENDS ..> SERVICES : invoca
+FRONTENDS ..> PORTS : OperatorIdentityProvider
+FRONTENDS ..> DOMAIN : errori/tipi
+
+note bottom of ADAPTERS
+  Layer 3: adapter astratti e sostituibili.
+  Nessun dettaglio tecnologico specifico
+  viene fissato in questo diagramma.
+end note
+
+@enduml

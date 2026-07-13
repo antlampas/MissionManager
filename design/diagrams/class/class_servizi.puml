@@ -1,0 +1,385 @@
+@startuml class_servizi
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Service Layer
+
+' ── DTO ─────────────────────────────────────────────────────
+class BadgeDTO <<DTO>> {
+  +id: UUID
+  +name: str
+  +description: str
+  +image_url: Optional[str]
+}
+
+class BadgeAwardDTO <<DTO>> {
+  +id: UUID
+  +badge: BadgeDTO
+  +target_type: str
+  +target_id: UUID
+  +recipients: List[UUID]
+  +recipients_count: int
+  +awarded_at: datetime
+}
+
+class ActivityDTO <<DTO>> {
+  +id: UUID
+  +title: str
+  +description: str
+  +status: Status
+  +assignees: List[UUID]
+  +badge_award: Optional[BadgeAwardDTO]
+}
+
+class ObjectiveDTO <<DTO>> {
+  +id: UUID
+  +description: str
+  +outcome: Optional[str]
+  +activities: List[ActivityDTO]
+}
+
+class MissionDTO <<DTO>> {
+  +id: UUID
+  +title: str
+  +description: str
+  +assignment_policy: AssignmentPolicy
+  +objectives: List[ObjectiveDTO]
+}
+
+class AssignmentDTO <<DTO>> {
+  +id: UUID
+  +mission_id: UUID
+  +assignee_type: Optional[AssigneeType]
+  +assignee_id: Optional[UUID]
+  +status: Status
+  +outcome: Optional[str]
+  +objectives: List[ObjectiveDTO]
+  +badge_award: Optional[BadgeAwardDTO]
+}
+
+note top of ObjectiveDTO
+  outcome è None per blueprint (Mission):
+  le attività non hanno ancora stato.
+  Popolato da compute_outcome() sugli
+  assignment live quando le attività
+  raggiungono stati terminali.
+end note
+
+note top of BadgeAwardDTO
+  Descrive una singola assegnazione
+  indipendente di un Badge: timestamp,
+  target e destinatari propagati.
+end note
+
+' ── Interfacce repository (viste dal Service Layer) ─────────
+interface MissionRepository {
+  +get(id) Mission
+  +save(m: Mission) Mission
+  +list(filters) List[Mission]
+  +delete(id) bool
+}
+interface MissionAssignmentRepository {
+  +get(id) MissionAssignment
+  +save(a: MissionAssignment) MissionAssignment
+  +list(filters) List[MissionAssignment]
+  +delete(id) bool
+  +get_by_mission(mid) List[MissionAssignment]
+  +get_by_assignee(assignee_id) List[MissionAssignment]
+  +get_by_status(status) List[MissionAssignment]
+  +count_by_mission(mid) int
+  +count_active_by_mission(mid) int
+}
+interface ObjectiveRepository {
+  +get(id) Objective
+  +save(o: Objective) Objective
+  +get_by_assignment(assignment_id) List[Objective]
+}
+interface ActivityRepository {
+  +get(id) Activity
+  +save(a: Activity) Activity
+  +get_by_objective(oid) List[Activity]
+  +get_by_person(person_id) List[Activity]
+}
+interface BadgeRepository {
+  +get(id) Badge
+  +save(b: Badge) Badge
+}
+interface BadgeAwardRepository {
+  +save(a: BadgeAward) BadgeAward
+  +get_by_person(pid) List[BadgeAward]
+  +get_by_assignment(assignment_id) Optional[BadgeAward]
+  +get_by_activity(activity_id) Optional[BadgeAward]
+  +exists_for_target(type, id) bool
+}
+interface PersonRepository {
+  +get_by_group(group_id: UUID) List[Person]
+}
+
+interface GroupRepository {
+  +add_member(group_id: UUID, person_id: UUID) void
+  +remove_member(group_id: UUID, person_id: UUID) void
+}
+
+class PersonDTO <<DTO>> {
+  +id: UUID
+  +nicknames: List[str]
+  +primary_nickname: str
+  +acl_level: int
+  +acl_groups: List[str]
+}
+
+class GroupDTO <<DTO>> {
+  +id: UUID
+}
+
+' ── Plugin ──────────────────────────────────────────────────
+class PluginRegistry {
+  -_hooks: dict<HookPoint, list<MissionHook>>
+  +register(hook: MissionHook) void
+  +unregister(plugin_id: str) void
+  +fire(point: HookPoint, context: HookContext) void
+  +list_plugins() list<PluginManifest>
+}
+
+' ── Servizi ─────────────────────────────────────────────────
+class AclService {
+  --
+  +create_entry(...) AclEntryDTO
+  +delete_entry(entry_id, operator_id)
+  +on_resource_created(resource, creator_id)
+  +ensure_bootstrap_entries(read, write, admin)
+}
+
+note right of AclService
+  Gestione delle AclEntry e seeding
+  (dettagli in class_acl_authorization).
+  I service di dominio la notificano
+  alla creazione/eliminazione delle
+  risorse, nella stessa transazione;
+  non eseguono mai controlli ACL
+  (enforcement al confine, DESIGN §10).
+end note
+
+class MissionService {
+  -_mission_repo: MissionRepository
+  -_plugin_registry: PluginRegistry
+  --
+  +create(title, desc, objectives) MissionDTO
+  +get(id: UUID) MissionDTO
+  +list(filters: dict) List[MissionDTO]
+  +delete(mission_id)
+}
+
+class AssignmentService {
+  -_assignment_repo: MissionAssignmentRepository
+  -_mission_repo: MissionRepository
+  -_person_repo: PersonRepository
+  -_group_repo: GroupRepository
+  -_activity_svc: ActivityService
+  -_plugin_registry: PluginRegistry
+  --
+  +create(mission_id, assignee_type: Optional, assignee_id: Optional) AssignmentDTO
+  +assign(assignment_id, assignee_type, assignee_id) AssignmentDTO
+  +get(id: UUID) AssignmentDTO
+  +list(mission_id, filters: dict) List[AssignmentDTO]
+  +update_status(assignment_id, status: Status) AssignmentDTO
+  +delete(assignment_id)
+}
+
+class ActivityService {
+  -_activity_repo: ActivityRepository
+  -_objective_repo: ObjectiveRepository
+  -_assignment_repo: MissionAssignmentRepository
+  -_person_repo: PersonRepository
+  -_group_repo: GroupRepository
+  -_plugin_registry: PluginRegistry
+  --
+  +get(id: UUID) ActivityDTO
+  +assign_to(activity_id, person_id) ActivityDTO
+  +unassign(activity_id, person_id) ActivityDTO
+  +update_status(activity_id, status: Status) ActivityDTO
+  +list_by_objective(objective_id) List[ActivityDTO]
+}
+
+class PersonService {
+  -_person_repo: PersonRepository
+  -_group_repo: GroupRepository
+  -_plugin_registry: PluginRegistry
+  --
+  +add(nicknames: List[str]) PersonDTO
+  +update(id: UUID, nicknames: Optional[List[str]]) PersonDTO
+  +set_acl_profile(id: UUID, acl_level: Optional[int], acl_groups: Optional[List[str]]) PersonDTO
+  +remove_acl_group(id: UUID, group: str) PersonDTO
+  +remove(id: UUID)
+  +get(id: UUID) PersonDTO
+  +list(filters: dict) List[PersonDTO]
+  +list_by_group(group_id: UUID) List[PersonDTO]
+  +add_group(name: Optional[str]) GroupDTO
+  +update_group(group_id: UUID, name: Optional[str], zone_type: Optional[str], zone_description: Optional[str]) GroupDTO
+  +remove_group(group_id: UUID)
+  +get_group(group_id: UUID) GroupDTO
+  +list_groups() List[GroupDTO]
+}
+
+class BadgeService {
+  -_badge_repo: BadgeRepository
+  -_badge_award_repo: BadgeAwardRepository
+  -_assignment_repo: MissionAssignmentRepository
+  -_activity_repo: ActivityRepository
+  -_person_repo: PersonRepository
+  -_plugin_registry: PluginRegistry
+  --
+  +create(name, desc, image_url) BadgeDTO
+  +get(id: UUID) BadgeDTO
+  +list() List[BadgeDTO]
+  +award_to_assignment(badge_id, assignment_id) BadgeAwardDTO
+  +award_to_activity(badge_id, activity_id) BadgeAwardDTO
+  +list_by_person(person_id) List[BadgeAwardDTO]
+}
+
+' ── Composizione DTO ────────────────────────────────────────
+MissionDTO *-- ObjectiveDTO
+AssignmentDTO *-- ObjectiveDTO
+AssignmentDTO *-- BadgeAwardDTO
+ObjectiveDTO *-- ActivityDTO
+ActivityDTO *-- BadgeAwardDTO
+BadgeAwardDTO *-- BadgeDTO
+
+' ── Dipendenze service → DTO ─────────────────────────────────
+MissionService ..> MissionDTO : restituisce
+AssignmentService ..> AssignmentDTO : restituisce
+ActivityService ..> ActivityDTO : restituisce
+BadgeService ..> BadgeDTO : restituisce
+BadgeService ..> BadgeAwardDTO : restituisce
+PersonService ..> PersonDTO : restituisce
+PersonService ..> GroupDTO : restituisce
+
+' ── Dipendenze ──────────────────────────────────────────────
+MissionService --> MissionRepository
+MissionService --> PluginRegistry
+MissionService ..> AclService : on_resource_created /\non_resource_deleted
+
+AssignmentService --> MissionAssignmentRepository
+AssignmentService --> MissionRepository
+AssignmentService --> PersonRepository
+AssignmentService --> GroupRepository
+AssignmentService --> ActivityService
+AssignmentService --> PluginRegistry
+AssignmentService ..> AclService : seeding
+
+ActivityService --> ActivityRepository
+ActivityService --> ObjectiveRepository
+ActivityService --> MissionAssignmentRepository
+ActivityService --> PersonRepository
+ActivityService --> GroupRepository
+ActivityService --> PluginRegistry
+
+BadgeService --> BadgeRepository
+BadgeService --> BadgeAwardRepository
+BadgeService --> MissionAssignmentRepository
+BadgeService --> ActivityRepository
+BadgeService --> PersonRepository
+BadgeService --> PluginRegistry
+BadgeService ..> AclService : seeding
+
+PersonService --> PersonRepository
+PersonService --> GroupRepository
+PersonService --> PluginRegistry
+
+' ── Note ────────────────────────────────────────────────────
+note right of MissionService
+  create() definisce il blueprint della
+  missione (obiettivi + attività) ma non
+  gestisce assegnazioni né stato.
+  Il blueprint è immutabile dopo la creazione:
+  nessun metodo per aggiungere o modificare
+  obiettivi/attività a posteriori.
+end note
+
+note right of AssignmentService
+  create() verifica prima la AssignmentPolicy
+  della Mission:
+  1. se max_total impostato:
+     count_by_mission() >= max_total
+     → ValidationError.
+  2. se max_concurrent impostato:
+     count_active_by_mission() >= max_concurrent
+     → ValidationError.
+     count_active conta ASSIGNED + IN_PROGRESS;
+     UNASSIGNED è una bozza.
+  I controlli di policy precedono il hook
+  BEFORE_CREATE_ASSIGNMENT.
+  Se l'assegnatario è fornito, lo valida
+  tramite PersonRepository.exists() o
+  GroupRepository.exists(); replica il blueprint
+  di obiettivi e attività dalla Mission e crea
+  il MissionAssignment con stato ASSIGNED se
+  l'assegnatario è fornito, UNASSIGNED altrimenti.
+  assign() imposta l'assegnatario su un
+  MissionAssignment UNASSIGNED, valida il
+  repository corrispondente e lo porta a ASSIGNED.
+  update_status() applica la macchina a
+  stati al MissionAssignment. Il passaggio
+  a COMPLETED richiede tutte le attività
+  associate in stato COMPLETED; se una
+  attività fallisce, lo stato corretto è FAILED.
+end note
+
+note right of ActivityService
+  Non espone create() pubblicamente:
+  le attività nascono all'interno di
+  AssignmentService.create().
+  assign_to() verifica che la persona
+  esista (PersonRepository.exists()) e
+  appartenga al gruppo dell'assignment
+  (PersonRepository.get_by_group()) oppure
+  sia la persona diretta se AssigneeType
+  == PERSON; aggiunge l'assegnatario e,
+  se l'Activity era UNASSIGNED, la porta
+  automaticamente ad ASSIGNED.
+  update_status() quando porta una Activity
+  a IN_PROGRESS e il MissionAssignment padre
+  è in stato ASSIGNED, porta automaticamente
+  il padre a IN_PROGRESS tramite
+  MissionAssignment.update_status().
+  Specularmente, quando porta una Activity
+  a FAILED e il padre non è ancora terminale,
+  porta automaticamente il padre a FAILED.
+end note
+
+note right of PluginRegistry
+  fire(HookPoint, HookContext): BEFORE_*
+  controlla ctx.abort solo dopo hook TRUSTED e
+  solleva OperationAbortedError se True.
+  I plugin SANDBOXED ricevono ScopedHookContext
+  e le loro mutazioni vengono ignorate.
+  AFTER_*: cattura le eccezioni senza
+  propagarle. Iniettato via DI (opzionale).
+  Vedi class_plugin.puml per i dettagli.
+end note
+
+note right of PersonService
+  add() crea una nuova Person con il profilo
+  ACL meno privilegiato; update() modifica i
+  soli nicknames. set_acl_profile() assegna
+  livello e gruppi: è l'operazione riservata
+  MANAGE_PROFILES, fuori dal catalogo
+  delegabile (DESIGN §10).
+  list_by_group() delega a PersonRepository
+  .get_by_group() e serializza in DTO.
+  add_group() / update_group() / remove_group() gestiscono
+  il ciclo di vita dei Group.
+  add_group_member() / remove_group_member()
+  delegano a GroupRepository.
+  PluginRegistry opzionale (iniettato via DI).
+end note
+
+note as NoteDTO
+  Confine DTO: i service non restituiscono
+  mai entità di dominio ai frontend.
+  I repository continuano a lavorare
+  con entità di dominio internamente;
+  la conversione a DTO avviene come
+  ultimo passo in ogni metodo service,
+  dopo gli hook AFTER_*.
+end note
+
+@enduml

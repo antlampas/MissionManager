@@ -1,0 +1,136 @@
+@startuml activity_assegna_missione
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Attività: Creazione di un MissionAssignment
+
+start
+
+:Ricevi richiesta di creazione
+(mission_id, assignee_type: Optional, assignee_id: Optional);
+
+:Carica la Mission (blueprint)
+dal repository;
+
+if (Missione trovata?) then (no)
+  :Restituisci NotFoundError;
+  stop
+else (sì)
+endif
+
+if (max_total impostato?) then (sì)
+  :count_by_mission(mission_id);
+  if (count >= max_total?) then (sì)
+    :Restituisci ValidationError
+    (limite totale assignment raggiunto);
+    stop
+  else (no)
+  endif
+else (no)
+endif
+
+if (max_concurrent impostato
+&& assegnatario fornito?) then (sì)
+  :count_active_by_mission(mission_id);
+  if (count >= max_concurrent?) then (sì)
+    :Restituisci ValidationError
+    (limite concorrenza raggiunto);
+    stop
+  else (no)
+  endif
+else (no)
+  note right
+    UNASSIGNED è una bozza e non consuma
+    capacità concorrente; il limite viene
+    ricontrollato da AssignmentService.assign().
+  end note
+endif
+
+:PluginRegistry.fire(BEFORE_CREATE_ASSIGNMENT,
+  HookContext(operator_id,
+    {mission_id, assignee_type, assignee_id}));
+
+if (Plugin abort?) then (sì)
+  :OperationAbortedError
+  propagata al frontend;
+  stop
+else (no)
+endif
+
+if (assegnatario fornito?) then (sì)
+
+  if (assignee_type == PERSON?) then (sì)
+
+    :Verifica esistenza person_id
+    tramite PersonRepository.exists();
+
+    if (Persona non trovata?) then (sì)
+      :Restituisci NotFoundError;
+      stop
+    else (no)
+    endif
+
+  else (GROUP)
+
+    :Verifica esistenza group_id
+    tramite GroupRepository.exists();
+
+    if (Gruppo non trovato?) then (sì)
+      :Restituisci NotFoundError;
+      stop
+    else (no)
+    endif
+
+  endif
+
+else (no)
+endif
+
+:Replica il blueprint della Mission:
+crea nuove istanze di Objective e Activity
+copiando struttura e descrizioni;
+
+if (assegnatario fornito?) then (sì)
+
+  :Crea MissionAssignment
+  (assignee_type, assignee_id,
+   status = ASSIGNED,
+   objectives = istanze replicate);
+
+  note right
+    ASSIGNED: l'assignment ha già un
+    assegnatario (persona o gruppo).
+    Le Activity interne non hanno ancora
+    raggiunto IN_PROGRESS; il passaggio a
+    IN_PROGRESS avverrà automaticamente
+    quando almeno una Activity raggiungerà
+    lo stato IN_PROGRESS tramite
+    ActivityService.update_status().
+  end note
+
+else (no)
+
+  :Crea MissionAssignment
+  (assignee_type = None, assignee_id = None,
+   status = UNASSIGNED,
+   objectives = istanze replicate);
+
+  note right
+    UNASSIGNED: nessun assegnatario
+    ancora impostato. Il passaggio a
+    ASSIGNED avverrà tramite
+    AssignmentService.assign().
+  end note
+
+endif
+
+:Persisti il MissionAssignment
+(MissionAssignmentRepository.save);
+
+:PluginRegistry.fire(AFTER_CREATE_ASSIGNMENT,
+  HookContext(operator_id, {}, result=assignment));
+
+:Restituisci AssignmentDTO
+(stato ASSIGNED o UNASSIGNED);
+
+stop
+
+@enduml

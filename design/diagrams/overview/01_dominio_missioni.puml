@@ -1,0 +1,169 @@
+@startuml 01_dominio_missioni
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Area Tematica: Missioni, Assignment, Attività e Badge
+
+enum Status {
+  UNASSIGNED
+  ASSIGNED
+  IN_PROGRESS
+  FAILED
+  COMPLETED
+}
+
+enum AssigneeType {
+  PERSON
+  GROUP
+}
+
+class AssignmentPolicy <<value object>> {
+  +max_total: Optional[int]
+  +max_concurrent: Optional[int]
+}
+
+class Mission {
+  +id: UUID
+  +title: str
+  +description: str
+  +assignment_policy: AssignmentPolicy
+}
+
+class MissionAssignment {
+  +id: UUID
+  +assignee_type: Optional[AssigneeType]
+  +assignee_id: Optional[UUID]
+  +status: Status
+}
+
+class Objective {
+  +id: UUID
+  +description: str
+}
+
+class Activity {
+  +id: UUID
+  +title: str
+  +description: str
+  +status: Status
+  +assignees: List[UUID]
+}
+
+class Badge {
+  +id: UUID
+  +name: str
+  +description: str
+  +image_url: Optional[str]
+}
+
+class BadgeAward {
+  +id: UUID
+  +badge_id: UUID
+  +target_type: str
+  +target_id: UUID
+  +recipients: List[UUID]
+  +awarded_at: datetime
+}
+
+Mission --> AssignmentPolicy
+Mission "1" *-- "1..*" Objective : blueprint >
+MissionAssignment "1" *-- "1..*" Objective : istanze live >
+Objective "1" *-- "1..*" Activity : composta da >
+MissionAssignment --> Mission : si basa su >
+BadgeAward --> Badge : definizione >
+MissionAssignment "0..1" --> "0..1" BadgeAward : può ricevere >
+Activity "0..1" --> "0..1" BadgeAward : può ricevere >
+MissionAssignment --> Status : ha stato
+Activity --> Status : ha stato
+MissionAssignment --> AssigneeType
+
+note bottom of Mission
+  Blueprint strutturale: definisce titolo,
+  descrizione e la struttura di obiettivi
+  e attività. Non ha stato né esito propri.
+  assignment_policy vincola il numero di
+  MissionAssignment creabili; default:
+  AssignmentPolicy.unlimited().
+end note
+
+note bottom of MissionAssignment
+  Entità vivente creata per ogni assegnazione
+  (a persona o gruppo). Possiede la propria
+  copia di obiettivi e attività, indipendente
+  dagli altri MissionAssignment della stessa Mission.
+  assignee_id è UUID di una Person o Group del dominio.
+  UNASSIGNED: nessun assegnatario ancora impostato.
+  ASSIGNED: assegnata a persona o gruppo,
+  indipendentemente dallo stato delle attività.
+  IN_PROGRESS: almeno una Activity interna
+  è in stato IN_PROGRESS.
+end note
+
+note bottom of Objective
+  L'esito è calcolato dagli stati
+  terminali delle sue attività.
+  Non possiede uno stato operativo
+  proprio e non viene marcato
+  manualmente.
+end note
+
+note bottom of Activity
+  assignees contiene UUID di Person
+  del dominio. assign_to() aggiunge un
+  assegnatario e, se l'Activity era
+  UNASSIGNED, la porta automaticamente
+  ad ASSIGNED. Deve avere almeno un
+  assegnatario prima di passare a
+  IN_PROGRESS.
+  Gli assegnatari devono appartenere
+  al gruppo dell'assignment (o essere
+  la persona diretta).
+  Una persona può essere assegnata
+  a più attività dello stesso assignment.
+end note
+
+note right of BadgeAward
+  Badge = definizione riutilizzabile.
+  BadgeAward = singola assegnazione
+  indipendente, con timestamp e destinatari.
+  Creabile solo quando il target
+  status == COMPLETED.
+  Propagato automaticamente:
+  se l'assignment è per un Group,
+  a tutti i suoi membri;
+  se per una Person, a quella persona.
+end note
+
+note right of Status
+  Transizioni consentite:
+  UNASSIGNED → ASSIGNED
+  ASSIGNED → IN_PROGRESS
+  IN_PROGRESS → FAILED
+  IN_PROGRESS → COMPLETED
+  Per MissionAssignment:
+  UNASSIGNED→ASSIGNED: tramite assign_to()
+    quando viene impostato l'assegnatario.
+  ASSIGNED→IN_PROGRESS: automaticamente quando
+    almeno una Activity passa allo stato IN_PROGRESS.
+  →FAILED: automaticamente quando un'Activity
+    interna passa a FAILED (padre non terminale).
+  COMPLETED: richiede tutte le attività COMPLETED.
+  Per Activity:
+  UNASSIGNED→ASSIGNED: automaticamente via
+    ActivityService.assign_to() al primo
+    assegnatario aggiunto.
+  ASSIGNED→IN_PROGRESS: manuale via update_status();
+    porta automaticamente il MissionAssignment
+    padre da ASSIGNED a IN_PROGRESS.
+end note
+
+note right of AssignmentPolicy
+  max_total: None = illimitato;
+  1 = assegnabile una sola volta.
+  max_concurrent: None = illimitato;
+  1 = al più un assignment attivo
+  alla volta.
+  Se entrambi impostati:
+  max_total >= max_concurrent.
+  Default su Mission: unlimited().
+end note
+
+@enduml

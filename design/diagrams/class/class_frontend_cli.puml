@@ -1,0 +1,144 @@
+@startuml class_frontend_cli
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Frontend CLI
+
+package "missionmanager.frontends.cli" {
+
+  class CLIApp {
+    -_identity_provider: OperatorIdentityProvider
+    -_auth_policy: AuthorizationPolicy
+    --
+    +run()
+    +setup_services()
+  }
+
+  note right of CLIApp
+    setup_services() configura
+    l'adapter di identità della CLI:
+    stabilisce l'operatore corrente
+    e usa PersonRepository.get() per
+    ottenere il profilo completo.
+    AuthorizationPolicy verifica il
+    profilo prima di ogni comando.
+  end note
+
+  class OutputFormatter {
+    --
+    +table(data: List[dict], headers: List[str])
+    +json_output(data: dict)
+    +success(msg: str)
+    +error(msg: str)
+    +warning(msg: str)
+    +badge_display(badge: BadgeDTO)
+  }
+
+  class MissionCommands {
+    -_mission_svc: MissionService
+    -_fmt: OutputFormatter
+    --
+    +create(title, desc,\n  --objective / --activity)
+    +list(title)
+    +show(id)
+    +delete(id)
+  }
+
+  class AssignmentCommands {
+    -_assignment_svc: AssignmentService
+    -_fmt: OutputFormatter
+    --
+    +create(mission_id,\n  --person-id / --group-id)
+    +assign(assignment_id,\n  --person-id / --group-id)
+    +list(mission_id, --status)
+    +show(id)
+    +set_status(assignment_id, status)
+    +badge(assignment_id, badge_id)
+  }
+
+  class ActivityCommands {
+    -_activity_svc: ActivityService
+    -_fmt: OutputFormatter
+    --
+    +show(id)
+    +list_by_objective(objective_id)
+    +assign(activity_id, person_id)
+    +set_status(activity_id, status)
+    +badge(activity_id, badge_id)
+  }
+
+  class BadgeCommands {
+    -_badge_svc: BadgeService
+    -_fmt: OutputFormatter
+    --
+    +create(name, desc, --image-url)
+    +list()
+    +show(id)
+    +list_by_person(person_id)
+  }
+
+  class PersonCommands {
+    -_person_svc: PersonService
+    -_fmt: OutputFormatter
+    --
+    +add(--nickname, ...)
+    +update(id, --nickname, ...)
+    +set_acl(id, --acl-level, --acl-group, ...)
+    +remove(id)
+    +list()
+    +show(id)
+    +list_by_group(group_id)
+    +group_add(--name)
+    +group_remove(group_id)
+    +group_list()
+    +group_show(group_id)
+  }
+}
+
+CLIApp --> MissionCommands
+CLIApp --> AssignmentCommands
+CLIApp --> ActivityCommands
+CLIApp --> BadgeCommands
+CLIApp --> PersonCommands
+
+MissionCommands --> OutputFormatter
+AssignmentCommands --> OutputFormatter
+ActivityCommands --> OutputFormatter
+BadgeCommands --> OutputFormatter
+PersonCommands --> OutputFormatter
+
+note right of AssignmentCommands
+  assignment create --mission-id <mid>
+    --person-id <pid>  oppure  --group-id <gid>
+  Crea il MissionAssignment, replica
+  gli obiettivi e le attività dal
+  blueprint della missione.
+
+  assignment assign <uuid>
+    --person-id <pid>  oppure  --group-id <gid>
+  Imposta l'assegnatario su un
+  MissionAssignment in stato UNASSIGNED;
+  porta lo stato a ASSIGNED.
+end note
+
+note right of PersonCommands
+  person add --nickname <n> [--nickname <n>...]
+  Crea una nuova Person (profilo ACL
+  meno privilegiato).
+
+  person update <id> [--nickname ...]
+  Modifica i nicknames.
+
+  person set-acl <id> [--acl-level <int>]
+    [--acl-group <str> ...]
+  Assegna il profilo ACL: operazione
+  MANAGE_PROFILES su SYSTEM:global,
+  fuori dal catalogo delegabile.
+
+  person remove <id>
+  Rimuove la Person dal sistema.
+
+  group add [--name <str>]: crea un nuovo Group.
+  group remove <id>: rimuove un Group.
+  group list: elenca tutti i Group.
+end note
+
+@enduml

@@ -1,0 +1,128 @@
+@startuml activity_update_status
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title ActivityService.update_status() — Aggiornamento Stato con Auto-Cascade
+
+skinparam ActivityBorderColor #784212
+skinparam ActivityBackgroundColor #FEF6EC
+skinparam ActivityFontColor #784212
+skinparam ArrowColor #784212
+skinparam PartitionBorderColor #784212
+skinparam PartitionBackgroundColor #FEF6EC
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+start
+
+:Frontend chiama **ActivityService.update_status**(activity_id, new_status);
+
+note right
+  Il frontend è già stato autenticato e autorizzato
+  dal middleware prima di questa chiamata.
+  Questo metodo aggiorna SOLO lo stato di una Activity
+  (entità foglia); il cascade al MissionAssignment padre
+  è automatico e trasparente al chiamante.
+end note
+
+partition "Caricamento e validazione transizione" {
+  :activity = activity_repo.**get**(activity_id);
+  if (non trovata?) then (sì)
+    :lancia **NotFoundError**;
+    stop
+  endif
+  :ok = activity.status.**can_transition_to**(new_status);
+  note right
+    Macchina a stati Activity:
+    ──────────────────────────────
+    UNASSIGNED → ASSIGNED
+    ASSIGNED   → IN_PROGRESS
+    ASSIGNED   → FAILED
+    IN_PROGRESS → COMPLETED
+    IN_PROGRESS → FAILED
+    ──────────────────────────────
+    UNASSIGNED→ASSIGNED avviene tramite
+    ActivityService.assign_to() al primo
+    assegnatario; non tramite questo metodo.
+    Tutte le altre transizioni sono vietate.
+  end note
+  if (NOT ok?) then (sì)
+    :lancia **StatusTransitionError**\n(current=activity.status, requested=new_status);
+    stop
+  endif
+  if (new_status == IN_PROGRESS\nAND len(activity.assignees) == 0?) then (sì)
+    :lancia **ValidationError**\n("Almeno un assegnatario richiesto per IN_PROGRESS");
+    stop
+  endif
+}
+
+partition "Plugin BEFORE_UPDATE_STATUS" {
+  :Costruisce **HookContext**(BEFORE_UPDATE_STATUS,\n  payload={activity_id, entity_type="ACTIVITY", new_status});
+  :plugin_registry.**fire**(BEFORE_UPDATE_STATUS, ctx)\n[se plugin_registry presente];
+  if (ctx.abort?) then (sì)
+    :lancia **OperationAbortedError**(ctx.abort_reason);
+    stop
+  endif
+}
+
+partition "Aggiornamento attività" {
+  :activity.**update_status**(new_status);
+  :activity_repo.**save**(activity) [flush];
+}
+
+partition "Auto-cascade al MissionAssignment padre" {
+  if (new_status == IN_PROGRESS?) then (sì)
+    :objective = objective_repo.**get**(activity.objective_id);
+    :assignment = assignment_repo.**get**(objective.assignment_id);
+    if (assignment.status == ASSIGNED?) then (sì)
+      :assignment.**update_status**(IN_PROGRESS);
+      :assignment_repo.**save**(assignment) [flush];
+      note right
+        Le due scritture (activity + assignment)
+        sono atomiche: SqlAlchemyUnitOfWork
+        conferma le due save() in una transazione.
+        Se una fallisce, nessuna modifica persiste.
+      end note
+    else (no — già IN_PROGRESS o terminale)
+      note right
+        Se l'assignment è già IN_PROGRESS,
+        COMPLETED o FAILED il cascade non viene
+        applicato: l'assignment è già in uno stato
+        uguale o più avanzato.
+      end note
+    endif
+  else if (new_status == FAILED e padre non terminale?) then (sì)
+    :objective = objective_repo.**get**(activity.objective_id);
+    :assignment = assignment_repo.**get**(objective.assignment_id);
+    :assignment.**update_status**(FAILED);
+    :assignment_repo.**save**(assignment) [flush];
+  else (no — altro stato)
+    note right
+      COMPLETED non modifica il padre: il suo
+      completamento richiede tutte le attività
+      COMPLETED. FAILED invece propaga FAILED.
+    end note
+  endif
+}
+
+partition "Plugin AFTER_UPDATE_STATUS" {
+  :ctx.result = activity (con nuovo status);
+  :plugin_registry.**fire**(AFTER_UPDATE_STATUS, ctx)\n[se plugin_registry presente];
+  note right
+    L'operazione è già completata.
+    Hook AFTER_*: eccezioni catturate e loggate,
+    mai propagate al chiamante.
+    Side effect: notifiche, aggiornamento badge,
+    sincronizzazione sistemi esterni.
+  end note
+}
+
+partition "Evento di dominio" {
+  :event_publisher.**publish**(\n  ActivityStatusChanged(activity_id,\n  old_status, new_status, occurred_at))\n[se event_publisher presente];
+}
+
+:Converti in **ActivityDTO**;
+:Restituisce **ActivityDTO**;
+
+stop
+
+@enduml

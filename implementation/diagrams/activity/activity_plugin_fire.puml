@@ -1,0 +1,49 @@
+@startuml activity_plugin_fire
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title PluginRegistry.fire() - Trust effettivo e sandbox
+start
+:fire(point, HookContext reale);
+:hooks = _hooks.get(point, []);
+if (hooks vuota?) then (si)
+  :return context;
+  stop
+endif
+:is_before = point inizia con BEFORE_;
+
+while (Hook successivo per priority DESC?) is (si)
+  :trust = PluginTrustRegistry.get_level(manifest.id)\noppure manifest.trust_level;
+  if (trust == TRUSTED?) then (si)
+    :hook.execute(context reale);
+    if (Eccezione?) then (si)
+      if (is_before?) then (si)
+        :Propaga eccezione del plugin TRUSTED;
+        stop
+      else (no)
+        :Log exception e continua;
+      endif
+    endif
+    if (is_before e context.abort?) then (si)
+      :Interrompe il ciclo;
+      break
+    endif
+  else (SANDBOXED)
+    :Crea ScopedHookContext;\n_safe_copy(payload/result);\nrimuove content/raw_content/file_bytes;
+    :hook.execute(scoped_context);
+    if (Eccezione?) then (si)
+      :Log exception e continua;
+    endif
+    if (scoped_context.abort?) then (si)
+      :Log warning: abort sandbox ignorato;
+    endif
+    :Ignora tutte le mutazioni sandbox\n(result, abort, user_message, payload);
+  endif
+endwhile (no)
+
+if (is_before e context.abort?) then (si)
+  :raise OperationAbortedError\n(user_message o default,\nabort_reason per log);
+  stop
+else (no)
+  :return context;
+  stop
+endif
+@enduml

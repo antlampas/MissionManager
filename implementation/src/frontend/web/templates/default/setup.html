@@ -1,0 +1,106 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+<!DOCTYPE html>
+<html lang="it" data-theme="{{ web_theme | default('default') }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Configurazione iniziale — Mission Manager</title>
+  <link rel="stylesheet" href="{{ url_for('mission_web.static', filename='style.css') }}">
+</head>
+<body>
+
+  <main class="app-main" style="display:flex; align-items:flex-start; justify-content:center;">
+    <div class="form-card">
+
+      <div style="text-align:center; margin-bottom:2rem;">
+        <span class="app-header__brand-icon" style="width:48px;height:48px;font-size:1.4rem;
+              border-radius:12px;background:var(--color-primary);color:#fff;
+              display:inline-flex;align-items:center;justify-content:center;
+              margin-bottom:.75rem;">M</span>
+        <h1 style="font-size:1.4rem; margin:0;">Mission Manager</h1>
+        <p class="text-muted text-sm" style="margin-top:.25rem;">Primo avvio — crea l'utente amministratore</p>
+      </div>
+
+      {% if error %}
+        <div class="alert alert-error" role="alert">
+          <span class="alert__icon" aria-hidden="true">✕</span>
+          <span>{{ error }}</span>
+        </div>
+      {% endif %}
+
+      <div class="card" style="padding:1.75rem;">
+        <form method="POST" action="{{ url_for('mission_web.setup_post') }}"
+              autocomplete="on">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+          <div class="form-group">
+            <label class="form-label form-label--required" for="username">
+              Username
+            </label>
+            <input
+              class="form-control"
+              type="text"
+              id="username"
+              name="username"
+              placeholder="nome utente amministratore"
+              autocomplete="username"
+              required
+              spellcheck="false"
+              value="{{ username | default('') }}"
+            >
+          </div>
+
+          <div class="form-group">
+            <label class="form-label form-label--required" for="password">
+              Password
+            </label>
+            <input
+              class="form-control"
+              type="password"
+              id="password"
+              name="password"
+              autocomplete="new-password"
+              minlength="8"
+              required
+            >
+            <p class="text-muted text-sm" style="margin-top:.35rem;">
+              Almeno 12 caratteri, con maiuscola, cifra e simbolo.
+            </p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label form-label--required" for="password2">
+              Conferma password
+            </label>
+            <input
+              class="form-control"
+              type="password"
+              id="password2"
+              name="password2"
+              autocomplete="new-password"
+              minlength="8"
+              required
+            >
+          </div>
+
+          <div style="margin-top:1.5rem;">
+            <button type="submit" class="btn btn-primary w-full btn-lg">
+              Crea amministratore
+            </button>
+          </div>
+
+        </form>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="app-footer" role="contentinfo">
+    <div class="container">&copy; 2026 Mission Manager</div>
+  </footer>
+
+</body>
+</html>

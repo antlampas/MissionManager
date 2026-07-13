@@ -1,0 +1,51 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}{{ badge.name }} — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_badges') }}">Badge</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">{{ badge.name }}</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">{{ badge.name }}</h1>
+  <div class="page-header__meta">
+    <span class="id-chip">{{ badge.id }}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Dettaglio badge</h2>
+    {% if badge.image_url %}
+      <img src="{{ badge.image_url }}" alt="{{ badge.name }}" width="48" height="48"
+           style="border-radius:8px;object-fit:cover;">
+    {% endif %}
+  </div>
+
+  <dl class="detail-grid">
+    <div class="detail-item" style="grid-column:1/-1;">
+      <dt class="detail-item__label">Descrizione</dt>
+      <dd class="detail-item__value">{{ badge.description or '—' }}</dd>
+    </div>
+    {% if badge.image_url %}
+    <div class="detail-item" style="grid-column:1/-1;">
+      <dt class="detail-item__label">URL immagine</dt>
+      <dd class="detail-item__value">
+        <a href="{{ badge.image_url }}" rel="noopener noreferrer" target="_blank">{{ badge.image_url }}</a>
+      </dd>
+    </div>
+    {% endif %}
+  </dl>
+</div>
+
+<div style="margin-top:.5rem;">
+  <a href="{{ url_for('mission_web.list_badges') }}" class="btn btn-secondary">← Torna al catalogo</a>
+</div>
+
+{% endblock %}

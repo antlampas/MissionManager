@@ -1,0 +1,108 @@
+@startuml activity_aggiorna_stato
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Attività: Aggiornamento dello Stato (MissionAssignment o Activity)
+
+start
+
+:Ricevi richiesta di aggiornamento stato
+(entity_id, entity_type, new_status);
+
+:Carica l'entità (MissionAssignment o Activity)
+dal repository corrispondente;
+
+if (Entità trovata?) then (no)
+  :Restituisci NotFoundError;
+  stop
+else (sì)
+endif
+
+note right
+  Macchina a stati:
+  ─────────────────────────────
+  UNASSIGNED → ASSIGNED
+  ASSIGNED   → IN_PROGRESS
+  IN_PROGRESS → FAILED
+  IN_PROGRESS → COMPLETED
+  ─────────────────────────────
+  Tutte le altre transizioni
+  sono vietate.
+  Per MissionAssignment:
+  UNASSIGNED→ASSIGNED avviene tramite
+    AssignmentService.assign(), non qui.
+  ASSIGNED→IN_PROGRESS avviene
+    automaticamente in ActivityService.
+    update_status() quando almeno una
+    Activity raggiunge IN_PROGRESS;
+    non è tipicamente invocata
+    via update_status() su assignment.
+  ASSIGNED/IN_PROGRESS→FAILED può
+    avvenire automaticamente quando
+    un'Activity interna passa a FAILED.
+  Per Activity:
+  UNASSIGNED→ASSIGNED avviene
+    automaticamente in ActivityService.
+    assign_to() al primo assegnatario;
+    non qui.
+end note
+
+:Verifica transizione valida
+Status.can_transition_to(new_status);
+
+if (Transizione valida?) then (no)
+  :Restituisci StatusTransitionError;
+  stop
+else (sì)
+endif
+
+if (entity_type == ASSIGNMENT
+&& new_status == COMPLETED?) then (sì)
+
+  :Verifica che tutte le attività
+  associate siano COMPLETED;
+
+  if (Esistono attività aperte?) then (sì)
+    :Restituisci ValidationError
+    "Assignment completabile solo
+     con attività tutte COMPLETED";
+    stop
+  else (no)
+  endif
+
+else (no o entity_type == ACTIVITY)
+endif
+
+:PluginRegistry.fire(BEFORE_UPDATE_STATUS,
+  HookContext(operator_id, {entity_id, entity_type, new_status}));
+
+if (Plugin abort?) then (sì)
+  :OperationAbortedError
+  propagata al frontend;
+  stop
+else (no)
+endif
+
+:Aggiorna entity.status = new_status;
+
+if (entity_type == ACTIVITY
+&& new_status == IN_PROGRESS
+&& MissionAssignment padre == ASSIGNED?) then (sì)
+  :Porta automaticamente il
+  MissionAssignment padre a IN_PROGRESS;
+elseif (entity_type == ACTIVITY
+&& new_status == FAILED
+&& MissionAssignment padre non terminale?) then (sì)
+  :Porta automaticamente il
+  MissionAssignment padre a FAILED;
+else (no)
+endif
+
+:Persisti le modifiche;
+
+:PluginRegistry.fire(AFTER_UPDATE_STATUS,
+  HookContext(operator_id, {}, result=entity));
+
+:Restituisci entità aggiornata;
+
+stop
+
+@enduml

@@ -1,0 +1,58 @@
+@startuml seq_rest_crea_missione
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Sequenza: Creazione Missione (Blueprint) via REST API
+
+actor "Gestore Missioni" as Client
+participant "MissionRouter\n(REST)" as Router
+participant "AuthMiddleware" as Auth
+participant "MissionService" as Service
+participant "MissionRepository" as MR
+database "Persistenza" as STORE
+participant "PluginRegistry\n(services)" as PR
+
+Client -> Router : POST /missions\n{\n  title, description,\n  objectives: [\n    {\n      description,\n      activities: [{title, desc}]\n    }\n  ]\n}
+activate Router
+
+Router -> Auth : is_allowed(operatore, CREATE_MISSION, SYSTEM:global)
+activate Auth
+Auth --> Router : ALLOWED / DENIED (401·403)
+deactivate Auth
+
+Router -> Service : create(title, desc, objectives)
+activate Service
+
+Service -> Service : valida dati\n(≥1 obiettivo, ≥1 attività per obiettivo)
+
+Service -> PR : fire(BEFORE_CREATE_MISSION, ctx)
+note right of PR : ctx.payload = {title, desc, objectives}
+
+break ctx.abort == true
+  Service --> Router : OperationAbortedError
+  Router --> Client : 422 Unprocessable Entity
+end
+
+Service -> Service : crea Mission (blueprint)\n+ Objectives + Activities
+
+Service -> MR : save(mission blueprint con obiettivi e attività)
+activate MR
+MR -> STORE : persisti blueprint,\nobjective e activity
+STORE --> MR : ok
+MR --> Service : Mission (blueprint)
+deactivate MR
+
+Service -> PR : fire(AFTER_CREATE_MISSION, ctx)
+note right of PR : ctx.result = mission
+
+Service --> Router : MissionDTO
+deactivate Service
+
+Router --> Client : 201 Created\n{\n  id, title,\n  objectives: [{id, activities: [...]}]\n}
+deactivate Router
+
+note over Router, STORE
+  La Mission creata è un blueprint strutturale senza stato.
+  Per avviare l'esecuzione occorre creare un MissionAssignment
+  tramite POST /missions/<id>/assignments.
+end note
+
+@enduml

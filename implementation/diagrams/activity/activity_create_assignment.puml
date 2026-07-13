@@ -1,0 +1,139 @@
+@startuml activity_create_assignment
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title AssignmentService.create() — Creazione MissionAssignment con verifica Policy e Replicazione Blueprint
+
+skinparam ActivityBorderColor #784212
+skinparam ActivityBackgroundColor #FEF6EC
+skinparam ActivityFontColor #784212
+skinparam ArrowColor #784212
+skinparam PartitionBorderColor #784212
+skinparam PartitionBackgroundColor #FEF6EC
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+start
+
+:Frontend chiama **AssignmentService.create**(\n  mission_id, assignee_type, assignee_id);
+
+note right
+  assignee_type e assignee_id sono Optional.
+  Se omessi, l'assignment è creato in stato UNASSIGNED.
+  Il frontend è già stato autenticato e autorizzato
+  dal middleware prima di questa chiamata.
+end note
+
+partition "Caricamento missione" {
+  :mission = mission_repo.**get**(mission_id);
+  if (non trovata?) then (sì)
+    :lancia **NotFoundError**;
+    stop
+  endif
+}
+
+partition "Verifica AssignmentPolicy" {
+  note right
+    La verifica Policy precede il BEFORE hook
+    per evitare che plugin siano invocati per
+    missioni che non possono essere assegnate.
+  end note
+  :policy = mission.assignment_policy;
+  if (policy.max_total is not None?) then (sì)
+    :total = assignment_repo.**count_by_mission**(mission_id);
+    if (total >= policy.max_total?) then (sì)
+      :lancia **ValidationError**\n("Limite assegnazioni totali raggiunto");
+      stop
+    endif
+  endif
+  if (policy.max_concurrent is not None
+  && assegnatario fornito?) then (sì)
+    :active = assignment_repo.**count_active_by_mission**(mission_id);
+    note right
+      count_active: conta gli assignment con status
+      ASSIGNED o IN_PROGRESS.
+      UNASSIGNED è una bozza e non consuma capacità.
+    end note
+    if (active >= policy.max_concurrent?) then (sì)
+      :lancia **ValidationError**\n("Limite assegnazioni attive raggiunto");
+      stop
+    endif
+  endif
+}
+
+partition "Validazione assegnatario (se fornito)" {
+  if (assignee_type == PERSON?) then (sì)
+    :person_repo.**exists**(assignee_id);
+    if (non esiste?) then (sì)
+      :lancia **NotFoundError**;
+      stop
+    endif
+  else if (assignee_type == GROUP?) then (sì)
+    :group_repo.**exists**(assignee_id);
+    if (non esiste?) then (sì)
+      :lancia **NotFoundError**;
+      stop
+    endif
+  else (nessun assegnatario)
+  endif
+}
+
+partition "Plugin BEFORE_CREATE_ASSIGNMENT" {
+  :Costruisce **HookContext**(BEFORE_CREATE_ASSIGNMENT,\n  payload={mission_id, assignee_type, assignee_id});
+  :plugin_registry.**fire**(BEFORE_CREATE_ASSIGNMENT, ctx)\n[se plugin_registry presente];
+  if (ctx.abort?) then (sì)
+    :lancia **OperationAbortedError**(ctx.abort_reason);
+    stop
+  endif
+}
+
+partition "Creazione e replicazione blueprint" {
+  :assignment_id = uuid4();
+  if (assignee_type fornito?) then (sì)
+    :status_iniziale = **ASSIGNED**;
+  else (no)
+    :status_iniziale = **UNASSIGNED**;
+  endif
+  :assignment = **MissionAssignment**(id=assignment_id,\n  mission_id, assignee_type, assignee_id,\n  status=status_iniziale, objectives=[]);
+  :Per ogni Objective del blueprint (mission.objectives):\n  new_obj = **Objective**(id=uuid4(), description=..., assignment_id)\n  Per ogni Activity nel blueprint Objective:\n    new_act = **Activity**(id=uuid4(), title, description,\n      status=UNASSIGNED, assignees=[], objective_id=new_obj.id)\n    new_obj.activities.append(new_act)\n  assignment.objectives.append(new_obj);
+  note right
+    Deep clone: ogni MissionAssignment ottiene proprie
+    istanze di Objective e Activity con ID univoci.
+    Modifiche al blueprint non influenzano gli
+    assignment già creati.
+    Le Activity del clone nascono sempre UNASSIGNED,
+    indipendentemente dallo stato dell'assignment padre.
+  end note
+  :assignment_repo.**save**(assignment)\n(con tutti gli Objective e Activity replicati);
+  note right
+    SqlAlchemyUnitOfWork esegue un solo commit
+    per l'intero caso d'uso. Se una sotto-entità
+    fallisce, nessuna modifica persiste.
+  end note
+}
+
+partition "Plugin AFTER_CREATE_ASSIGNMENT" {
+  :ctx.result = assignment;
+  :plugin_registry.**fire**(AFTER_CREATE_ASSIGNMENT, ctx)\n[se plugin_registry presente];
+  note right
+    L'assignment è già persistito.
+    Hook AFTER_*: eccezioni catturate e loggate,
+    mai propagate al chiamante.
+  end note
+}
+
+:Converti in **AssignmentDTO**\n(con ObjectiveDTO e ActivityDTO);
+
+note right
+  ASSIGNED: l'assignment ha già un assegnatario.
+    Le Activity passano a IN_PROGRESS tramite
+    ActivityService.update_status().
+  UNASSIGNED: nessun assegnatario ancora.
+    Il passaggio a ASSIGNED avviene tramite
+    AssignmentService.assign().
+end note
+
+:Restituisce **AssignmentDTO**;
+
+stop
+
+@enduml

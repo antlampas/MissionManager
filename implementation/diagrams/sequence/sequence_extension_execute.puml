@@ -1,0 +1,33 @@
+@startuml sequence_extension_execute
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title ExtensionRegistry.execute() - mission-stats
+actor "Client REST/CLI/Web" as C
+participant "Frontend adapter" as FE
+participant "ExtensionRegistry" as ER
+participant "MissionStatsExtension" as EXT
+participant "MissionService" as MS
+participant "AssignmentService" as AS
+
+C -> FE: GET /extensions/mission-stats/missions/<mission_id>/stats
+FE -> FE: costruisce ExtensionRequest(\noperator_id, params={mission_id}, body={})
+FE -> ER: execute("mission-stats", request)
+activate ER
+ER -> ER: lookup _extensions["mission-stats"]
+alt estensione assente
+  ER --> FE: NotFoundError(resource_type="extension")
+  FE --> C: HTTP 404 / exit 1
+else registrata
+  ER -> EXT: execute(request)
+  activate EXT
+  EXT -> MS: get(mission_id)
+  MS --> EXT: MissionDTO
+  EXT -> AS: list(mission_id=...)
+  AS --> EXT: AssignmentDTO[]
+  EXT -> EXT: calcola statistiche aggregate
+  EXT --> ER: ExtensionResult(status_code=200,\ndata={...})
+  deactivate EXT
+  ER --> FE: ExtensionResult
+  FE --> C: HTTP 200 JSON / output CLI
+end
+deactivate ER
+@enduml

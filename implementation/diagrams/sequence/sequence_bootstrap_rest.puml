@@ -1,0 +1,50 @@
+@startuml sequence_bootstrap_rest
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Bootstrap REST API - plugin, estensioni e frontend dinamico
+participant ":bootstrap_rest.py" as BOOT
+participant "Repositories\nSQLAlchemy/OIDC" as REPOS
+participant "Services\nMission/Assignment/Activity/Badge/Person/Acl" as SVCS
+participant "PluginTrustRegistry" as PTR
+participant "PluginLoader" as PL
+participant "PluginRegistry" as PR
+participant "InstalledManifestRegistry" as IMR
+participant "ExtensionLoader" as EL
+participant "ExtensionRegistry" as ER
+participant "RestApp\nQuart" as APP
+participant "AuthMiddleware" as AM
+
+BOOT -> REPOS: costruisce repository concreti\nmission, assignment, activity, badge,\nperson/group backend local o OIDC
+BOOT -> SVCS: costruisce service applicativi\ncon repository e unit of work
+
+== Plugin ==
+BOOT -> PTR: new PluginTrustRegistry(config.plugins.trust_registry_path)
+PTR --> BOOT: entry {trust_level,\nmanifest_checksum, code_checksum}
+BOOT -> PL: new PluginLoader(config.plugins.scan_paths, PTR)
+BOOT -> PL: load_all()
+PL -> PTR: get_entry(plugin_id) per bundle
+PL -> PL: verifica manifest.json e plugin.py\nprima dell'import
+PL --> BOOT: MissionHook[]
+BOOT -> PR: new PluginRegistry(PTR)
+BOOT -> PR: register(hook) per ogni plugin
+BOOT -> SVCS: inietta PluginRegistry nei service
+
+== Estensioni ==
+BOOT -> IMR: new InstalledManifestRegistry(\nconfig.extensions.installed_registry_path)
+IMR --> BOOT: entry {manifest_checksum, code_checksum}
+BOOT -> EL: new ExtensionLoader(scan_paths, IMR,\nmission_svc=..., assignment_svc=...,\nactivity_svc=..., badge_svc=..., person_svc=...)
+BOOT -> EL: load_all()
+EL -> IMR: get_entry(ext_id) per bundle
+EL -> EL: verifica manifest.json e extension.py\nprima dell'import
+EL --> BOOT: [mission-stats, badge-export,\nassignment-timeline]
+BOOT -> ER: new ExtensionRegistry()
+BOOT -> ER: register(extension) per manifest.id
+
+== REST ==
+BOOT -> APP: create_rest_app(services, auth_policy,\nidentity_adapter, extension_registry=ER)
+APP -> AM: new AuthMiddleware(app, identity_adapter, auth_policy)
+APP -> APP: registra router core sotto /api
+APP -> ER: list()
+ER --> APP: ExtensionManifest[]
+APP -> APP: registra route dinamiche\n/extensions/{id}/... dai manifest
+APP --> BOOT: quart_app pronto
+@enduml

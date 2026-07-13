@@ -1,0 +1,21 @@
+{
+  "id": "mission-stats",
+  "name": "Mission Stats",
+  "version": "1.0.0",
+  "description": "Statistiche aggregate per una missione.",
+  "code_checksum": "sha256:373e93f22314475f779316f30ce459f4a3bb4280566d5e11989a4ad57f40eecf",
+  "provides_routes": [
+    {
+      "path": "/extensions/mission-stats/missions/<mission_id>/stats",
+      "method": "GET",
+      "description": "Statistiche di avanzamento di una missione."
+    }
+  ],
+  "provides_commands": [
+    {
+      "name": "mission-stats",
+      "description": "Mostra le statistiche di una missione."
+    }
+  ],
+  "license": "CC-BY-SA-4.0"
+}

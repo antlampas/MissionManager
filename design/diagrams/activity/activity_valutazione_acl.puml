@@ -1,0 +1,61 @@
+@startuml activity_valutazione_acl
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma di Attività - Valutazione ACL is_allowed(richiedente, operazione, risorsa)
+
+start
+
+:Risolvi il Profile del richiedente
+(ProfileProvider);
+note right
+  Non autenticato → profilo anonimo
+  implicito (ANON_SENTINEL, {"public"})
+end note
+
+:Carica le entry proprie di
+(risorsa, operazione);
+
+if (Esistono entry proprie?) then (sì)
+  :Filtra le entry per match
+  (soggetto + livello/gruppo, §5.1);
+  if (Almeno una DENY matchante?) then (sì)
+    :DENIED;
+    stop
+  elseif (Almeno una ALLOW matchante?) then (sì)
+    :ALLOWED;
+    stop
+  else (no)
+    :DENIED (default deny);
+    stop
+  endif
+else (no)
+  if (Operazione ereditabile?\n(MANAGE_ACL non lo è)) then (no)
+    :DENIED;
+    stop
+  else (sì)
+    :Risolvi i padri della risorsa
+    (ResourceHierarchyProvider);
+    note right
+      ACTIVITY → OBJECTIVE →
+      (ASSIGNMENT | MISSION) → MISSION:*
+      Le radici di tipo e SYSTEM:global
+      non hanno padri.
+    endnote
+    if (Nessun padre?) then (sì)
+      :DENIED (default deny);
+      stop
+    else (no)
+      :Valuta ricorsivamente ogni padre
+      (OR permissiva: basta un padre
+      che concede);
+      if (Almeno un padre concede?) then (sì)
+        :ALLOWED;
+        stop
+      else (no)
+        :DENIED;
+        stop
+      endif
+    endif
+  endif
+endif
+
+@enduml

@@ -1,0 +1,73 @@
+@startuml package_layer_dipendenze
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Dipendenze tra Layer - Architettura a Cipolla
+
+skinparam packageBackgroundColor #FFFFFF
+skinparam packageBorderColor #888888
+
+package "Layer 1 - Domain (nucleo)" #E3F2FD {
+  note as N1
+    Nessuna dipendenza esterna.
+    Oggetti di dominio puri.
+    models, enums, exceptions.
+  end note
+}
+
+package "Layer 2 - Repository Interfaces e Porte" #E8F5E9 {
+  note as N2
+    Dipende da: Domain.
+    Definisce contratti astratti:
+    MissionRepository, MissionAssignmentRepository,
+    ObjectiveRepository, ActivityRepository,
+    BadgeRepository, BadgeAwardRepository,
+    PersonRepository, GroupRepository,
+    OperatorIdentityProvider,
+    MissionHook, MissionExtension.
+    Nessuna logica di business.
+  end note
+}
+
+package "Layer 3 - Repository Adapter e Adapter Esterni" #FFF8E1 {
+  note as N3
+    Dipende da: Domain, contratti Layer 2.
+    Implementa repository, porte esterne,
+    identità operatore, hook e loader
+    senza esporre tecnologie concrete.
+    Tutto viene iniettato via DI.
+  end note
+}
+
+package "Layer 4 - Services" #FCE4EC {
+  note as N4
+    Dipende da: Domain, Repo interfacce.
+    NON dipende da implementazioni concrete.
+    Tutta la logica applicativa risiede qui.
+    PluginRegistry: fire(HookPoint, HookContext);
+    BEFORE_* abortibili via ctx.abort=True.
+    MissionExtension: moduli opzionali
+    che aggiungono nuove operazioni;
+    ricevono i service nel costruttore.
+  end note
+}
+
+package "Layer 5 - Frontends" #F3E5F5 {
+  note as N5
+    Dipende da: Services, Domain, Layer 2 (OperatorIdentityProvider).
+    REST API JSON, Web App (async), CLI.
+    ExtensionRegistry: al bootstrap monta
+    rotte, blueprint e comandi aggiuntivi
+    forniti dalle estensioni attive.
+    Nessuna logica di business.
+  end note
+}
+
+"Layer 2 - Repository Interfaces e Porte" ..> "Layer 1 - Domain (nucleo)"
+"Layer 3 - Repository Adapter e Adapter Esterni" ..> "Layer 2 - Repository Interfaces e Porte"
+"Layer 3 - Repository Adapter e Adapter Esterni" ..> "Layer 1 - Domain (nucleo)"
+"Layer 4 - Services" ..> "Layer 2 - Repository Interfaces e Porte"
+"Layer 4 - Services" ..> "Layer 1 - Domain (nucleo)"
+"Layer 5 - Frontends" ..> "Layer 4 - Services"
+"Layer 5 - Frontends" ..> "Layer 2 - Repository Interfaces e Porte" : OperatorIdentityProvider
+"Layer 5 - Frontends" ..> "Layer 1 - Domain (nucleo)"
+
+@enduml

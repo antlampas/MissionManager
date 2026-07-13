@@ -1,0 +1,279 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Assignment {{ assignment.id[:8] }}… — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_missions') }}">Missioni</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <a href="{{ url_for('mission_web.get_mission', id=assignment.mission_id) }}">Missione</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">Assignment</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">
+    Assignment
+    <span data-assignment-id="{{ assignment.id }}">
+      <span class="status-badge status-badge--{{ assignment.status }}">
+        {{ assignment.status }}
+      </span>
+    </span>
+  </h1>
+  <div class="page-header__meta">
+    <span class="id-chip">{{ assignment.id }}</span>
+  </div>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+<!-- Dettaglio -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Dettaglio</h2>
+    {% if assignment.badge_award %}
+      <span class="badge-award" title="{{ assignment.badge_award.badge.name }}">
+        🏅 {{ assignment.badge_award.badge.name }}
+      </span>
+    {% endif %}
+  </div>
+
+  <dl class="detail-grid">
+    <div class="detail-item">
+      <dt class="detail-item__label">Stato</dt>
+      <dd class="detail-item__value">
+        <span class="status-badge status-badge--{{ assignment.status }}">
+          {{ assignment.status }}
+        </span>
+      </dd>
+    </div>
+
+    <div class="detail-item">
+      <dt class="detail-item__label">Assegnatario</dt>
+      <dd class="detail-item__value">
+        {% if assignment.assignee_type and assignment.assignee_id %}
+          <span class="text-sm">{{ assignment.assignee_type }}</span>
+          {% if assignment.assignee_type == 'PERSON' %}
+            <span style="margin-left:.25rem;">{{ person_names.get(assignment.assignee_id) or (assignment.assignee_id[:8] ~ '…') }}</span>
+          {% else %}
+            <span style="margin-left:.25rem;">{{ group_names.get(assignment.assignee_id) or ('Gruppo ' ~ assignment.assignee_id[:8] ~ '…') }}</span>
+          {% endif %}
+        {% else %}
+          <span class="text-muted">—</span>
+        {% endif %}
+      </dd>
+    </div>
+
+    {% if assignment.outcome %}
+    <div class="detail-item">
+      <dt class="detail-item__label">Esito</dt>
+      <dd class="detail-item__value">
+        <span class="outcome-badge outcome-badge--{{ assignment.outcome }}">
+          {{ assignment.outcome }}
+        </span>
+      </dd>
+    </div>
+    {% endif %}
+  </dl>
+</div>
+
+<!-- Azioni -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Azioni</h2>
+  </div>
+
+  {# Assegna un assignment ancora non assegnato a una persona o gruppo #}
+  {% if assignment.status == 'UNASSIGNED' %}
+    <form data-form="assignment-assign"
+          data-endpoint="{{ url_for('mission_web.assign_assignment', id=assignment.id) }}"
+          data-redirect="reload">
+      <h3 class="text-sm" style="font-weight:600;">Assegna a persona o gruppo</h3>
+      <div class="form-group">
+        <label class="form-label" for="assignee_type">Tipo di assegnatario</label>
+        <select class="form-control" id="assignee_type" data-assignee-type>
+          <option value="">— Seleziona —</option>
+          <option value="PERSON">Persona</option>
+          <option value="GROUP">Gruppo</option>
+        </select>
+      </div>
+      <div class="form-group" data-assignee-field="PERSON" hidden>
+        <label class="form-label" for="assignee_person">Persona</label>
+        <select class="form-control" id="assignee_person" data-assignee-id="PERSON">
+          <option value="">— Seleziona —</option>
+          {% for p in persons %}
+            <option value="{{ p.id }}">{{ p.primary_nickname }} ({{ p.id[:8] }}…)</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" data-assignee-field="GROUP" hidden>
+        <label class="form-label" for="assignee_group">Gruppo</label>
+        <select class="form-control" id="assignee_group" data-assignee-id="GROUP">
+          <option value="">— Seleziona —</option>
+          {% for grp in groups %}
+            <option value="{{ grp.id }}">{{ grp.name }} ({{ grp.id[:8] }}…)</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>Assegna</button>
+    </form>
+    <hr class="divider">
+  {% endif %}
+
+  {# Cambio stato manuale (solo transizioni valide) #}
+  {% if allowed_statuses %}
+    <form data-form="status-change" data-method="PUT"
+          data-endpoint="{{ url_for('mission_web.update_assignment_status', id=assignment.id) }}"
+          data-redirect="reload"
+          style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;">
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
+        <label class="form-label" for="new_status">Aggiorna stato</label>
+        <select class="form-control" id="new_status" data-json="status">
+          {% for s in allowed_statuses %}
+            <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>Aggiorna stato</button>
+    </form>
+  {% else %}
+    <p class="text-muted text-sm" style="margin:0;">
+      Stato terminale: nessuna transizione manuale disponibile.
+    </p>
+  {% endif %}
+
+  {# Assegna un badge a un assignment completato (una sola volta) #}
+  {% if assignment.status == 'COMPLETED' and not assignment.badge_award and badges %}
+    <hr class="divider">
+    <form data-form="badge-award"
+          data-endpoint="{{ url_for('mission_web.award_assignment_badge', id=assignment.id) }}"
+          data-redirect="reload"
+          style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;">
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
+        <label class="form-label" for="badge_id">Assegna badge</label>
+        <select class="form-control" id="badge_id" data-json="badge_id">
+          {% for b in badges %}
+            <option value="{{ b.id }}">{{ b.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>🏅 Assegna badge</button>
+    </form>
+  {% endif %}
+</div>
+
+<!-- Obiettivi e attività -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Obiettivi e attività</h2>
+    <a href="{{ url_for('mission_web.list_objectives', id=assignment.id) }}"
+       class="btn btn-secondary btn-sm">
+      Vista compatta
+    </a>
+  </div>
+
+  <p class="form-hint" style="margin-top:0;">
+    Ogni attività può essere assegnata alle persone ammesse dal perimetro
+    dell'assignment (i membri del gruppo assegnato, o la persona nominale).
+  </p>
+
+  {% if assignment.objectives %}
+    <ul class="objective-list">
+      {% for obj in assignment.objectives %}
+      <li class="objective-item">
+        <div class="objective-item__header">
+          <h3 class="objective-item__title">{{ obj.description }}</h3>
+          <div style="display:flex;gap:.5rem;align-items:center;">
+            {% if obj.outcome %}
+              <span class="outcome-badge outcome-badge--{{ obj.outcome }}">
+                {{ obj.outcome }}
+              </span>
+            {% endif %}
+            <span class="text-muted text-xs">
+              {{ obj.activities | length }} attività
+            </span>
+          </div>
+        </div>
+
+        {% if obj.activities %}
+          <ul class="activity-list" aria-label="Attività">
+            {% for act in obj.activities %}
+            {% set candidates = candidates_by_activity.get(act.id, []) %}
+            <li class="activity-item" style="display:block;" data-activity-id="{{ act.id }}">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+                <div class="activity-item__title">
+                  <a href="{{ url_for('mission_web.get_activity', id=act.id) }}">
+                    {{ act.title }}
+                  </a>
+                </div>
+                <span class="status-badge status-badge--{{ act.status }}">
+                  {{ act.status }}
+                </span>
+              </div>
+
+              {# Assegnatari correnti dell'attività, con rimozione inline #}
+              <div class="activity-item__meta">
+                {% if act.assignees %}
+                  <ul class="assignee-list" style="margin-top:.25rem;">
+                    {% for a in act.assignees %}
+                      <li class="assignee-chip">
+                        {{ person_names.get(a) or (a[:8] ~ '…') }}
+                        <form data-form="activity-unassign" data-method="DELETE"
+                              data-endpoint="{{ url_for('mission_web.unassign_from_activity', id=act.id) }}"
+                              data-redirect="reload"
+                              data-confirm="Rimuovere l'assegnatario?"
+                              style="display:inline;">
+                          <input type="hidden" data-json="person_id" value="{{ a }}">
+                          <button type="submit" class="btn btn-sm" data-submit
+                                  style="padding:0 .35rem;background:none;border:none;color:inherit;"
+                                  aria-label="Rimuovi assegnatario">✕</button>
+                        </form>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <span class="text-muted text-xs">Nessun assegnatario.</span>
+                {% endif %}
+              </div>
+
+              {# Assegna una persona ammessa a questa attività #}
+              {% if candidates %}
+                <form data-form="activity-assign"
+                      data-endpoint="{{ url_for('mission_web.assign_to_activity', id=act.id) }}"
+                      data-redirect="reload"
+                      style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;margin-top:.5rem;">
+                  <div class="form-group" style="margin-bottom:0;flex:1;min-width:180px;">
+                    <label class="form-label" for="assign_{{ act.id }}">Assegna persona</label>
+                    <select class="form-control" id="assign_{{ act.id }}" data-json="person_id">
+                      {% for p in candidates %}
+                        <option value="{{ p.id }}">{{ p.primary_nickname }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <button type="submit" class="btn btn-secondary btn-sm" data-submit>Assegna</button>
+                </form>
+              {% elif not act.assignees %}
+                <p class="text-muted text-xs" style="margin:.5rem 0 0;">
+                  Nessuna persona assegnabile: assegna prima l'assignment a una persona o
+                  a un gruppo con membri.
+                </p>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted text-sm" style="margin:0;">Nessun obiettivo in questo assignment.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

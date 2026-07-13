@@ -1,0 +1,119 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}{{ mission.title }} — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_missions') }}">Missioni</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">{{ mission.title }}</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">{{ mission.title }}</h1>
+  <div class="page-header__meta">
+    <span class="id-chip">{{ mission.id }}</span>
+    {% if not mission.assignment_policy.unlimited %}
+      <span class="text-muted text-sm" style="margin-left:.5rem;">
+        Max:
+        {% if mission.assignment_policy.max_total %}
+          {{ mission.assignment_policy.max_total }} totali
+        {% endif %}
+        {% if mission.assignment_policy.max_concurrent %}
+          / {{ mission.assignment_policy.max_concurrent }} contemporanei
+        {% endif %}
+      </span>
+    {% endif %}
+  </div>
+  <div class="page-header__actions">
+    <a href="{{ url_for('mission_web.new_assignment_form') }}?mission={{ mission.id }}"
+       class="btn btn-primary">Assegna a persona o gruppo</a>
+    <a href="#elimina" class="btn btn-danger">Elimina missione</a>
+  </div>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+{% if mission.description %}
+  <div class="card" style="margin-bottom:1.25rem;">
+    <p style="margin:0;">{{ mission.description }}</p>
+  </div>
+{% endif %}
+
+<!-- Obiettivi blueprint -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Obiettivi del blueprint</h2>
+    <span class="text-muted text-sm">
+      {{ mission.objectives | length }} obiettiv{{ 'o' if mission.objectives | length == 1 else 'i' }}
+    </span>
+  </div>
+
+  <p class="form-hint" style="margin-top:0;">
+    Il blueprint è immutabile: obiettivi e attività si definiscono solo alla
+    creazione della missione e non possono più essere aggiunti o modificati.
+  </p>
+
+  {% if mission.objectives %}
+    <ul class="objective-list">
+      {% for obj in mission.objectives %}
+      <li class="objective-item">
+        <div class="objective-item__header">
+          <h3 class="objective-item__title">{{ obj.description }}</h3>
+          <span class="text-muted text-xs">
+            {{ obj.activities | length }} attivit{{ 'à' if obj.activities | length == 1 else 'à' }}
+          </span>
+        </div>
+
+        {% if obj.activities %}
+          <ul class="activity-list" aria-label="Attività dell'obiettivo">
+            {% for act in obj.activities %}
+            <li class="activity-item">
+              <div>
+                <div class="activity-item__title">{{ act.title }}</div>
+                {% if act.description %}
+                  <div class="activity-item__meta">{{ act.description }}</div>
+                {% endif %}
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted text-sm" style="margin:0;">Nessun obiettivo definito.</p>
+  {% endif %}
+</div>
+
+<!-- Elimina la missione (blueprint) -->
+<div class="card" id="elimina">
+  <div class="card__header">
+    <h2 class="card__title">Elimina missione</h2>
+  </div>
+  <p class="form-hint" style="margin-top:0;">
+    Rimuove il blueprint della missione. L'operazione può essere rifiutata se
+    esistono esecuzioni collegate.
+  </p>
+  <form data-form="delete" data-method="DELETE"
+        data-endpoint="{{ url_for('mission_web.delete_mission', id=mission.id) }}"
+        data-redirect="{{ url_for('mission_web.list_missions') }}"
+        data-confirm="Eliminare definitivamente la missione «{{ mission.title }}»?">
+    <button type="submit" class="btn btn-danger" data-submit>Elimina missione</button>
+  </form>
+</div>
+
+<div style="margin-top:.5rem;">
+  <a href="{{ url_for('mission_web.list_missions') }}" class="btn btn-secondary">
+    ← Torna alla lista
+  </a>
+</div>
+
+{% endblock %}

@@ -1,0 +1,220 @@
+@startuml class_frontend_rest
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Layer 5 — Frontend REST API (Quart)
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+skinparam class {
+  BackgroundColor<<rest>>    #EBF5FB
+  BorderColor<<rest>>        #1A5276
+
+  BackgroundColor<<extern>>  #EEEEEE
+  BorderColor<<extern>>      #AAAAAA
+}
+
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+
+' ── App ─────────────────────────────────────────────────────
+class RestApp <<rest>> {
+  +__init__(mission_svc, assignment_svc, activity_svc, badge_svc, person_svc, ...) 
+  -_register_routes(auth_service) void
+  +run(host, port, debug) void
+}
+
+' ── Middleware ───────────────────────────────────────────────
+class AuthMiddleware <<rest>> {
+  -_identity_provider: OperatorIdentityProvider
+  -_auth_policy: AuthorizationPolicy
+  +async check_acl() [before_request]
+}
+
+' ── Error Handler ────────────────────────────────────────────
+class ErrorHandler <<rest>> {
+  {static} +handle_validation_error(e: ValidationError) Response
+  {static} +handle_not_found(e: NotFoundError) Response
+  {static} +handle_acl_error(e: ACLError) Response
+  {static} +handle_status_transition(e: StatusTransitionError) Response
+  {static} +handle_operation_aborted(e: OperationAbortedError) Response
+  {static} +handle_generic(e: Exception) Response
+}
+
+' ── Routers (Quart MethodView) ───────────────────────────────
+class MissionRouter <<rest>> {
+  -_svc: MissionService
+  +async get(id: Optional[str]) Response
+  +async post() Response
+  +async delete(id: str) Response
+}
+
+class AssignmentRouter <<rest>> {
+  -_svc: AssignmentService
+  -_badge_svc: BadgeService
+  +async get(id: str) Response
+  +async post(id, mission_id) Response
+  +async put(id) Response
+}
+
+class ObjectiveRouter <<rest>> {
+  -_svc: AssignmentService
+  +async get(id: str) Response
+}
+
+class ActivityRouter <<rest>> {
+  -_activity_svc: ActivityService
+  -_badge_svc: BadgeService
+  +async get(id: str) Response
+  +async put_status(id: str) Response
+  +async post_assign(id: str) Response
+  +async post_badge(id: str) Response
+}
+
+class BadgeRouter <<rest>> {
+  -_badge_svc: BadgeService
+  +async get(id: Optional[str]) Response
+  +async post() Response
+}
+
+class PersonRouter <<rest>> {
+  -_person_svc: PersonService
+  +async get_persons(id: Optional[str]) Response
+  +async post_person() Response
+  +async put_person(id: str) Response
+  +async delete_person(id: str) Response
+  +async get_groups(id: Optional[str]) Response
+  +async post_group() Response
+  +async delete_group(id: str) Response
+  +async get_group_members(id: str) Response
+}
+
+' ── Extern stubs ─────────────────────────────────────────────
+class MissionService <<extern>>
+class AssignmentService <<extern>>
+class ActivityService <<extern>>
+class BadgeService <<extern>>
+class PersonService <<extern>>
+class AuthorizationPolicy <<extern>>
+class OperatorIdentityProvider <<extern>>
+class ExtensionRegistry <<extern>>
+
+' ── Relazioni ────────────────────────────────────────────────
+RestApp --> AuthMiddleware
+RestApp --> ErrorHandler
+RestApp --> MissionRouter
+RestApp --> AssignmentRouter
+RestApp --> ObjectiveRouter
+RestApp --> ActivityRouter
+RestApp --> BadgeRouter
+RestApp --> PersonRouter
+RestApp ..> ExtensionRegistry : list() → registra route al bootstrap
+
+AuthMiddleware --> OperatorIdentityProvider
+AuthMiddleware --> AuthorizationPolicy
+
+MissionRouter --> MissionService
+AssignmentRouter --> AssignmentService
+AssignmentRouter --> BadgeService
+ObjectiveRouter --> AssignmentService
+ActivityRouter --> ActivityService
+ActivityRouter --> BadgeService
+BadgeRouter --> BadgeService
+PersonRouter --> PersonService
+
+' ── Note ─────────────────────────────────────────────────────
+note right of RestApp
+  create_rest_app() costruisce l'istanza
+  Quart, registra i Router come MethodView
+  su un Blueprint con url_prefix='/api',
+  registra l'ErrorHandler e monta le route
+  delle estensioni tramite ExtensionRegistry.list().
+  Tutte le route REST sono sotto /api.
+end note
+
+note right of AuthMiddleware
+  before_request hook asincrono registrato su Quart.
+  Risolve l'operatore via
+  OperatorIdentityProvider e lo
+  imposta in g.operator per gli handler.
+  Mappa (rule, metodo) su (Operation,
+  ResourceRef) e verifica via
+  AuthorizationPolicy.is_allowed();
+  DENIED → 401 (anonimo) / 403 (autenticato).
+end note
+
+note right of ErrorHandler
+  ErrorHandler.register(app) chiamato
+  in create_rest_app() mappa l'intera
+  gerarchia MissionManagerError:
+  ValidationError    → 400
+  NotFoundError      → 404
+  ACLError           → 403
+  StatusTransitionError → 409
+  OperationAbortedError → 422
+  Exception          → 500
+end note
+
+note right of MissionRouter
+  Ogni Router estende quart.views.MethodView.
+  Tutte le route sono registrate su Blueprint url_prefix='/api'.
+  GET  /api/missions          → get(id=None)
+  POST /api/missions          → post()
+  GET  /api/missions/<id>     → get(id)
+  DELETE /api/missions/<id>   → delete(id)
+  GET  /api/missions/<id>/objectives → lista (sola lettura)
+  Blueprint immutabile: nessun POST objectives.
+end note
+
+note right of AssignmentRouter
+  Gestisce il ciclo di vita del
+  MissionAssignment: assign, stato, BadgeAward.
+  POST /api/assignments/<id>/assign imposta
+  l'assegnatario (payload: assignee_type,
+  assignee_id) su UNASSIGNED → ASSIGNED.
+  POST /api/assignments/<id>/badge crea
+  BadgeAward solo se status == COMPLETED
+  e propaga ai recipients.
+end note
+
+note right of ActivityRouter
+  POST /api/activities/<id>/assign accetta
+  person_id: la persona deve appartenere
+  al gruppo dell'assignment oppure essere
+  la persona diretta (AssigneeType==PERSON).
+  POST /api/activities/<id>/badge crea
+  BadgeAward per l'Activity.
+end note
+
+note right of BadgeRouter
+  GET  /api/badges       → list()
+  POST /api/badges       → post()
+  GET  /api/badges/<id>  → get(id)
+  GET  /api/persons/<id>/badges → list_by_person()
+  espone i BadgeAward di una persona.
+end note
+
+note right of PersonRouter
+  GET  /api/persons            → get_persons(id=None)
+  POST /api/persons            → post_person()
+  GET  /api/persons/<id>       → get_persons(id)
+  PUT  /api/persons/<id>       → put_person(id)
+  DELETE /api/persons/<id>     → delete_person(id)
+  GET  /api/groups             → get_groups(id=None)
+  POST /api/groups             → post_group()
+  GET  /api/groups/<id>        → get_groups(id)
+  DELETE /api/groups/<id>      → delete_group(id)
+  GET  /api/groups/<id>/members → get_group_members(id)
+  Payload POST person: nicknames (profilo ACL al minimo
+  privilegio; assegnazione via PUT /persons/<id>/acl)
+  Payload PUT person: stessi campi, parziale (PATCH semantics).
+  POST/DELETE person e group: entry del tier amministrativo
+  via AuthMiddleware (livello configurabile al bootstrap).
+end note
+
+note bottom of ExtensionRegistry
+  Route estensioni registrate dinamicamente
+  da ExtensionRegistry.list() al bootstrap.
+  Zero modifiche al codice base del frontend.
+end note
+
+@enduml

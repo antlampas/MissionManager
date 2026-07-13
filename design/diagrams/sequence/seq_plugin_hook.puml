@@ -1,0 +1,41 @@
+@startuml seq_plugin_hook
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Sequenza - PluginRegistry.fire() con trust e sandbox
+participant "Service" as S
+participant "PluginRegistry" as PR
+participant "PluginTrustRegistry" as TR
+participant "TrustedHook" as TH
+participant "SandboxedHook" as SH
+
+S -> PR: fire(BEFORE_CREATE_ASSIGNMENT, context)
+activate PR
+PR -> TR: get_level(trusted.manifest.id)
+TR --> PR: TRUSTED
+PR -> TH: execute(HookContext reale)
+TH --> PR: context.result aggiornato,\nabort=False
+
+PR -> TR: get_level(sandboxed.manifest.id)
+TR --> PR: SANDBOXED
+PR -> PR: crea ScopedHookContext\nsenza content/raw_content/file_bytes
+PR -> SH: execute(scoped_context)
+SH --> PR: abort=True, result modificato
+PR -> PR: log warning; ignora tutte le mutazioni sandbox
+
+PR --> S: HookContext reale
+deactivate PR
+
+alt trusted BEFORE imposta abort
+  S -> PR: fire(BEFORE_UPDATE_STATUS, context)
+  PR -> TH: execute(HookContext reale)
+  TH --> PR: abort=True,\nuser_message/abort_reason
+  PR --> S: OperationAbortedError
+end
+
+alt AFTER_* solleva eccezione
+  S -> PR: fire(AFTER_AWARD_BADGE, context)
+  PR -> TH: execute(context)
+  TH --> PR: Exception
+  PR -> PR: log exception; continua
+  PR --> S: context
+end
+@enduml

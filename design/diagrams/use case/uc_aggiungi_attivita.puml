@@ -1,0 +1,49 @@
+@startuml uc_aggiungi_attivita
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Caso d'Uso — Aggiunta di un assegnatario a un'attività
+left to right direction
+
+actor "Gestore Missioni" as GM
+
+rectangle "MissionManager" {
+  usecase "Assegnare persona ad attività" as UC_ASSIGN
+  usecase "Verificare appartenenza al perimetro\ndell'assignment" as UC_PERIMETRO
+  usecase "Validare esistenza persona" as UC_VALID_PERS
+  usecase "Portare attività ad ASSIGNED" as UC_TRANS
+}
+
+GM --> UC_ASSIGN
+
+UC_ASSIGN ..> UC_VALID_PERS : <<include>>
+UC_ASSIGN ..> UC_PERIMETRO : <<include>>
+UC_TRANS ..> UC_ASSIGN : <<extend>>
+
+note right of UC_ASSIGN
+  ActivityService.assign_to(activity_id, person_id).
+  Aggiunge person_id alla lista assignees
+  dell'attività all'interno di un MissionAssignment.
+  Restituisce ActivityDTO aggiornato.
+end note
+
+note right of UC_VALID_PERS
+  PersonRepository.exists(person_id).
+  Verifica l'esistenza della persona nel
+  repository del dominio.
+end note
+
+note right of UC_PERIMETRO
+  Se MissionAssignment è di tipo PERSON:
+    la persona deve coincidere con l'assegnatario.
+  Se MissionAssignment è di tipo GROUP:
+    la persona deve essere membro del gruppo
+    (PersonRepository.get_by_group()).
+end note
+
+note right of UC_TRANS
+  Transizione automatica (estensione condizionale):
+  se l'attività è in stato UNASSIGNED al momento
+  dell'assegnazione, passa automaticamente ad ASSIGNED
+  al primo assegnatario aggiunto.
+end note
+
+@enduml

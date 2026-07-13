@@ -1,0 +1,47 @@
+@startuml uc_rimuovi_attivita
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Caso d'Uso — Rimozione di un assegnatario da un'attività
+left to right direction
+
+actor "Gestore Missioni" as GM
+
+rectangle "MissionManager" {
+  usecase "Rimuovere assegnatario da attività" as UC_UNASSIGN
+  usecase "Verificare presenza dell'assegnatario" as UC_CHECK
+  usecase "Verificare stato non terminale" as UC_TERMINAL
+}
+
+GM --> UC_UNASSIGN
+
+UC_UNASSIGN ..> UC_CHECK : <<include>>
+UC_UNASSIGN ..> UC_TERMINAL : <<include>>
+
+note right of UC_UNASSIGN
+  ActivityService.unassign(activity_id, person_id).
+  Rimuove person_id dalla lista assignees
+  dell'attività all'interno del MissionAssignment.
+  Restituisce ActivityDTO aggiornato.
+end note
+
+note right of UC_CHECK
+  Verifica che person_id sia presente
+  nell'attuale lista assignees dell'attività.
+  Solleva NotFoundError se la persona
+  non è tra gli assegnatari.
+end note
+
+note right of UC_TERMINAL
+  La rimozione non è consentita se l'attività
+  si trova in uno stato terminale
+  (COMPLETED o FAILED).
+  Solleva StatusTransitionError in caso contrario.
+end note
+
+note bottom of UC_UNASSIGN
+  La rimozione non comporta una transizione
+  automatica di stato: l'attività mantiene
+  lo stato corrente indipendentemente
+  dal numero di assegnatari rimanenti.
+end note
+
+@enduml

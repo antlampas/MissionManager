@@ -1,0 +1,149 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}{{ activity.title }} — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_missions') }}">Missioni</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">Attività</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">{{ activity.title }}</h1>
+  <div class="page-header__meta">
+    <span class="id-chip">{{ activity.id }}</span>
+  </div>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+<div class="card" data-activity-id="{{ activity.id }}">
+  <div class="card__header">
+    <h2 class="card__title">Dettaglio attività</h2>
+    {% if activity.badge_award %}
+      <span class="badge-award" title="{{ activity.badge_award.badge.name }}">
+        🏅 {{ activity.badge_award.badge.name }}
+      </span>
+    {% endif %}
+  </div>
+
+  <dl class="detail-grid">
+    <div class="detail-item">
+      <dt class="detail-item__label">Stato</dt>
+      <dd class="detail-item__value">
+        <span class="status-badge status-badge--{{ activity.status }}">
+          {{ activity.status }}
+        </span>
+      </dd>
+    </div>
+
+    {% if activity.description %}
+    <div class="detail-item" style="grid-column:1/-1;">
+      <dt class="detail-item__label">Descrizione</dt>
+      <dd class="detail-item__value">{{ activity.description }}</dd>
+    </div>
+    {% endif %}
+  </dl>
+
+  <hr class="divider">
+  <h3 class="text-sm" style="font-weight:600;margin-bottom:.5rem;">
+    Assegnatari ({{ activity.assignees | length }})
+  </h3>
+  {% if activity.assignees %}
+    <ul class="assignee-list">
+      {% for a in activity.assignees %}
+        <li class="assignee-chip">
+          {{ person_names.get(a) or (a[:8] ~ '…') }}
+          <form data-form="activity-unassign" data-method="DELETE"
+                data-endpoint="{{ url_for('mission_web.unassign_from_activity', id=activity.id) }}"
+                data-redirect="reload"
+                data-confirm="Rimuovere l'assegnatario?"
+                style="display:inline;">
+            <input type="hidden" data-json="person_id" value="{{ a }}">
+            <button type="submit" class="btn btn-sm" data-submit
+                    style="padding:0 .35rem;background:none;border:none;color:inherit;"
+                    aria-label="Rimuovi assegnatario">✕</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted text-sm" style="margin:0;">Nessun assegnatario.</p>
+  {% endif %}
+</div>
+
+<!-- Azioni -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Azioni</h2>
+  </div>
+
+  {# Assegna una persona all'attività #}
+  {% if candidates %}
+    <form data-form="activity-assign"
+          data-endpoint="{{ url_for('mission_web.assign_to_activity', id=activity.id) }}"
+          data-redirect="reload"
+          style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;">
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
+        <label class="form-label" for="person_id">Assegna persona</label>
+        <select class="form-control" id="person_id" data-json="person_id">
+          {% for p in candidates %}
+            <option value="{{ p.id }}">{{ p.primary_nickname }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>Assegna</button>
+    </form>
+    <hr class="divider">
+  {% endif %}
+
+  {# Cambio stato manuale (solo transizioni valide) #}
+  {% if allowed_statuses %}
+    <form data-form="status-change" data-method="PUT"
+          data-endpoint="{{ url_for('mission_web.update_activity_status', id=activity.id) }}"
+          data-redirect="reload"
+          style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;">
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
+        <label class="form-label" for="new_status">Aggiorna stato</label>
+        <select class="form-control" id="new_status" data-json="status">
+          {% for s in allowed_statuses %}
+            <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>Aggiorna stato</button>
+    </form>
+  {% else %}
+    <p class="text-muted text-sm" style="margin:0;">
+      Stato terminale: nessuna transizione manuale disponibile.
+    </p>
+  {% endif %}
+
+  {# Assegna un badge a un'attività completata (una sola volta) #}
+  {% if activity.status == 'COMPLETED' and not activity.badge_award and badges %}
+    <hr class="divider">
+    <form data-form="badge-award"
+          data-endpoint="{{ url_for('mission_web.award_activity_badge', id=activity.id) }}"
+          data-redirect="reload"
+          style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;">
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:200px;">
+        <label class="form-label" for="badge_id">Assegna badge</label>
+        <select class="form-control" id="badge_id" data-json="badge_id">
+          {% for b in badges %}
+            <option value="{{ b.id }}">{{ b.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>🏅 Assegna badge</button>
+    </form>
+  {% endif %}
+</div>
+
+{% endblock %}

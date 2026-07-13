@@ -1,0 +1,138 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}{{ group.name or 'Gruppo' }} — Mission Manager{% endblock %}
+
+{% block content %}
+
+{% set group_name = group.name or ('Gruppo ' ~ group.id[:8] ~ '…') %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_groups') }}">Gruppi</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">{{ group_name }}</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">{{ group_name }}</h1>
+  <div class="page-header__meta">
+    <span class="id-chip">{{ group.id }}</span>
+    {% if group.zone_type %}
+      <span class="text-muted text-sm" style="margin-left:.5rem;">
+        Zona: {{ group.zone_type }}{% if group.zone_description %} — {{ group.zone_description }}{% endif %}
+      </span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+<!-- Modifica -->
+<form data-form="group-edit" data-method="PUT"
+      data-endpoint="{{ url_for('mission_web.update_group', id=group.id) }}"
+      data-redirect="reload">
+  <div class="card">
+    <div class="card__header">
+      <h2 class="card__title">Profilo</h2>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label form-label--required" for="name">Nome gruppo</label>
+      <input class="form-control" type="text" id="name" data-json="name"
+             value="{{ group.name or '' }}">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="zone_type">Tipo zona</label>
+      <select class="form-control" id="zone_type" data-json="zone_type">
+        <option value="GEOGRAPHIC" {% if group.zone_type == 'GEOGRAPHIC' %}selected{% endif %}>Geografica</option>
+        <option value="VIRTUAL" {% if not group.zone_type or group.zone_type == 'VIRTUAL' %}selected{% endif %}>Virtuale</option>
+      </select>
+    </div>
+
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label" for="zone_description">Descrizione zona</label>
+      <input class="form-control" type="text" id="zone_description"
+             data-json="zone_description" data-json-optional
+             value="{{ group.zone_description or '' }}">
+    </div>
+
+    <div style="margin-top:1.25rem;">
+      <button type="submit" class="btn btn-primary" data-submit>Salva modifiche</button>
+    </div>
+  </div>
+</form>
+
+<!-- Membri -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Membri</h2>
+    <span class="text-muted text-sm">{{ members | length }}</span>
+  </div>
+
+  {% if members %}
+    <ul class="objective-list">
+      {% for m in members %}
+      <li class="objective-item">
+        <div class="objective-item__header">
+          <h3 class="objective-item__title">
+            <a href="{{ url_for('mission_web.get_person', id=m.id) }}">{{ m.primary_nickname }}</a>
+          </h3>
+          <form data-form="group-member-remove" data-method="DELETE"
+                data-endpoint="{{ url_for('mission_web.remove_group_member', id=group.id) }}"
+                data-redirect="reload"
+                data-confirm="Rimuovere {{ m.primary_nickname }} dal gruppo?">
+            <input type="hidden" data-json="person_id" value="{{ m.id }}">
+            <button type="submit" class="btn btn-danger btn-sm" data-submit>Rimuovi</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted text-sm" style="margin:0;">Nessun membro nel gruppo.</p>
+  {% endif %}
+
+  <hr class="divider">
+
+  <h3 class="text-sm" style="font-weight:600;">Aggiungi membro</h3>
+  {% if candidates %}
+    <form data-form="group-member-add"
+          data-endpoint="{{ url_for('mission_web.add_group_member', id=group.id) }}"
+          data-redirect="reload"
+          style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;">
+      <div class="form-group" style="margin-bottom:0;flex:1;min-width:220px;">
+        <label class="form-label" for="add_member">Persona</label>
+        <select class="form-control" id="add_member" data-json="person_id">
+          {% for p in candidates %}
+            <option value="{{ p.id }}">{{ p.primary_nickname }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>Aggiungi</button>
+    </form>
+  {% else %}
+    <p class="text-muted text-sm" style="margin:0;">
+      Tutte le persone registrate sono già membri di questo gruppo.
+    </p>
+  {% endif %}
+</div>
+
+<!-- Zona pericolosa -->
+<div class="card">
+  <div class="card__header">
+    <h2 class="card__title">Elimina gruppo</h2>
+  </div>
+  <form data-form="delete" data-method="DELETE"
+        data-endpoint="{{ url_for('mission_web.delete_group', id=group.id) }}"
+        data-redirect="{{ url_for('mission_web.list_groups') }}"
+        data-confirm="Eliminare definitivamente il gruppo {{ group_name }}?">
+    <button type="submit" class="btn btn-danger" data-submit>Elimina gruppo</button>
+  </form>
+</div>
+
+{% endblock %}

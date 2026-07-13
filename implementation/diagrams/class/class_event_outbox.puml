@@ -1,0 +1,50 @@
+@startuml class_event_outbox
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Eventi — Transactional Outbox e Consumer Idempotenti
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+class "Application service" as Service {
+  +mutating use case()
+}
+class SqlAlchemyUnitOfWork {
+  +transaction()
+}
+class EventPublisher {
+  +publish(event: DomainEvent)
+  +register_consumer(name, handler)
+  +dispatch_consumer(name)
+}
+class OutboxEventRow {
+  +id: UUID
+  +event_type: str
+  +payload: JSON
+  +occurred_at: datetime
+}
+class OutboxDeliveryRow {
+  +event_id: UUID
+  +consumer: str
+  +delivered_at: datetime
+}
+class AuditLogger {
+  +handle_outbox_event(type, payload)
+}
+class RealtimeNotifier {
+  +handle_outbox_event(type, payload)
+}
+
+Service --> SqlAlchemyUnitOfWork
+Service --> EventPublisher : publish()
+EventPublisher --> OutboxEventRow : scrive nella stessa transazione
+OutboxEventRow --> OutboxDeliveryRow : una consegna per consumer
+EventPublisher --> AuditLogger : consumer "audit"
+EventPublisher --> RealtimeNotifier : consumer "realtime"
+
+note bottom of EventPublisher
+  L'evento diventa visibile ai consumer solo dopo il commit.
+  Il vincolo (event_id, consumer) rende la consegna idempotente e
+  permette a REST, Web e CLI di essere processi distinti.
+end note
+
+@enduml

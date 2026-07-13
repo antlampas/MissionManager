@@ -1,0 +1,96 @@
+@startuml activity_award_badge
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title BadgeService — Creazione BadgeAward e Propagazione
+
+skinparam ActivityBorderColor #784212
+skinparam ActivityBackgroundColor #FEF6EC
+skinparam ActivityFontColor #784212
+skinparam ArrowColor #784212
+skinparam PartitionBorderColor #784212
+skinparam PartitionBackgroundColor #FEF6EC
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+start
+
+:Frontend chiama BadgeService.award_to_assignment(\n  badge_id, assignment_id);
+
+partition "Caricamento e validazioni" {
+  :badge = badge_repo.get(badge_id);
+  if (non trovato?) then (sì)
+    :lancia NotFoundError;
+    stop
+  endif
+  :assignment = assignment_repo.get(assignment_id);
+  if (non trovato?) then (sì)
+    :lancia NotFoundError;
+    stop
+  endif
+  if (assignment.status != COMPLETED?) then (sì)
+    :lancia ValidationError("BadgeAward richiedono stato COMPLETED");
+    stop
+  endif
+  :already_awarded = badge_award_repo.exists_for_target("ASSIGNMENT", assignment_id);
+  if (already_awarded?) then (sì)
+    :lancia ValidationError("Questo target ha già ricevuto un BadgeAward");
+    stop
+  endif
+}
+
+partition "Plugin BEFORE_AWARD_BADGE" {
+  :HookContext(BEFORE_AWARD_BADGE,\n  payload={badge_id, "ASSIGNMENT", assignment_id});
+  :plugin_registry.fire(BEFORE_AWARD_BADGE, ctx);
+  if (ctx.abort?) then (sì)
+    :lancia OperationAbortedError;
+    stop
+  endif
+}
+
+partition "Calcolo destinatari" {
+  if (assignment.assignee_type == GROUP?) then (sì)
+    :persons = person_repo.get_by_group(assignment.assignee_id);
+    :recipients = [p.id for p in persons];
+    note right
+      Snapshot dei membri al momento del conferimento.
+      Se i membri cambiano dopo, il BadgeAward
+      non viene aggiornato.
+    end note
+  else if (assignment.assignee_type == PERSON?) then (sì)
+    :recipients = [assignment.assignee_id];
+  else (UNASSIGNED — caso degenere)
+    :recipients = [];
+  endif
+}
+
+partition "Creazione BadgeAward" {
+  :badge_award = BadgeAward(\n  id=uuid4(),\n  badge_id=badge_id,\n  target_type="ASSIGNMENT",\n  target_id=assignment_id,\n  recipients=recipients,\n  awarded_at=now()\n);
+  :badge_award_repo.save(badge_award);
+  :assignment.award_badge(badge_award);
+  :assignment_repo.save(assignment) [flush];
+  note right
+    Award e FK del target sono nella stessa
+    SqlAlchemyUnitOfWork; il DB ha inoltre
+    un vincolo unico su (target_type, target_id).
+  end note
+}
+
+partition "Plugin AFTER_AWARD_BADGE" {
+  :ctx.result = {badge_award, recipients_count=len(recipients)};
+  :plugin_registry.fire(AFTER_AWARD_BADGE, ctx);
+}
+
+:Converti in BadgeAwardDTO (con BadgeDTO embedded);
+:Restituisce BadgeAwardDTO;
+stop
+
+legend
+  **award_to_activity(badge_id, activity_id)** segue lo stesso flusso con:
+  - target_type = "ACTIVITY"
+  - Verifica activity.status == COMPLETED
+  - recipients = activity.assignees (tutti gli assegnatari dell'attività)
+  - Stessa verifica exists_for_target("ACTIVITY", activity_id)
+  Non usa person_repo: i recipient sono già gli UUID in activity.assignees.
+endlegend
+
+@enduml

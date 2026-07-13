@@ -1,0 +1,14 @@
+{
+  "id": "notify-on-create",
+  "name": "Notify On Create",
+  "version": "1.0.0",
+  "description": "Logga un messaggio alla creazione di missioni e assignment.",
+  "hooks": [
+    "AFTER_CREATE_MISSION",
+    "AFTER_CREATE_ASSIGNMENT"
+  ],
+  "trust_level": "SANDBOXED",
+  "priority": 0,
+  "code_checksum": "sha256:4c8f56e9626dce4f30c6f46628c63c0105776ec2b1cb9e4c09adb8d2c17816c6",
+  "license": "CC-BY-SA-4.0"
+}

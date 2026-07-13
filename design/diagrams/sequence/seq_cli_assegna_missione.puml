@@ -1,0 +1,95 @@
+@startuml seq_cli_assegna_missione
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Sequenza: Creazione MissionAssignment via CLI
+
+actor "Gestore Missioni" as GM
+participant "AssignmentCommands\n(CLI)" as CLI
+participant "AssignmentService" as Service
+participant "MissionRepository" as MR
+participant "MissionAssignmentRepository" as AR
+participant "PersonRepository" as PRep
+database "Persistenza" as STORE
+participant "PluginRegistry\n(services)" as PR
+
+GM -> CLI : missionmanager assignment create\n  --mission-id <mid>\n  --person-id <pid>
+activate CLI
+
+CLI -> Service : create(mission_id, PERSON, person_id)
+activate Service
+
+Service -> MR : get(mission_id)
+activate MR
+MR -> STORE : recupera blueprint missione
+STORE --> MR : dati missione
+MR --> Service : Mission (blueprint)
+deactivate MR
+
+break Missione non trovata
+  Service --> CLI : NotFoundError
+  CLI --> GM : [ERRORE] Missione non trovata.
+end
+
+Service -> AR : count_by_mission(mission_id)
+activate AR
+AR -> STORE : conta assignment storici
+STORE --> AR : count
+AR --> Service : int
+deactivate AR
+
+break max_total impostato e count >= max_total
+  Service --> CLI : ValidationError (limite totale raggiunto)
+  CLI --> GM : [ERRORE] Limite assegnazioni totali raggiunto.
+end
+
+Service -> AR : count_active_by_mission(mission_id)
+activate AR
+AR -> STORE : conta assignment operativi\n(ASSIGNED, IN_PROGRESS)
+STORE --> AR : count_active
+AR --> Service : int
+deactivate AR
+
+break max_concurrent impostato e count_active >= max_concurrent
+  Service --> CLI : ValidationError (limite concorrenza raggiunto)
+  CLI --> GM : [ERRORE] Limite assegnazioni concorrenti raggiunto.
+end
+
+Service -> PR : fire(BEFORE_CREATE_ASSIGNMENT, ctx)
+note right of PR : ctx.payload = {mission_id, PERSON, person_id}
+
+break ctx.abort == true
+  Service --> CLI : OperationAbortedError
+  CLI --> GM : [ERRORE] Operazione annullata: abort_reason
+end
+
+Service -> PRep : exists(person_id)
+activate PRep
+PRep -> STORE : verifica esistenza persona
+STORE --> PRep : bool
+PRep --> Service : bool
+deactivate PRep
+
+break Persona non trovata
+  Service --> CLI : NotFoundError
+  CLI --> GM : [ERRORE] Persona non trovata.
+end
+
+Service -> Service : replica obiettivi e attività\ndal blueprint della Mission
+
+Service -> AR : save(MissionAssignment{PERSON, person_id, ASSIGNED})
+activate AR
+AR -> STORE : persisti assignment,\nobjective e activity istanziati
+STORE --> AR : ok
+AR --> Service : MissionAssignment (ASSIGNED)
+deactivate AR
+
+Service -> PR : fire(AFTER_CREATE_ASSIGNMENT, ctx)
+note right of PR : ctx.result = assignment
+
+Service --> CLI : AssignmentDTO
+deactivate Service
+
+CLI -> CLI : OutputFormatter.success(...)
+CLI --> GM : Assignment creato per persona <person_id>\n  Missione: "[title]"\n  Stato: ASSIGNED
+deactivate CLI
+
+@enduml

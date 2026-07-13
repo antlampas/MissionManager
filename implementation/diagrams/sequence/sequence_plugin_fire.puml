@@ -1,0 +1,44 @@
+@startuml sequence_plugin_fire
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title PluginRegistry.fire() - scenari TRUSTED/SANDBOXED
+participant "AssignmentService" as AS
+participant "ActivityService" as ACS
+participant "PluginRegistry" as PR
+participant "PluginTrustRegistry" as TR
+participant "StatusValidator\nTRUSTED" as SV
+participant "NotifyOnCreate\nSANDBOXED" as SN
+
+== BEFORE con abort TRUSTED ==
+AS -> PR: fire(BEFORE_CREATE_ASSIGNMENT, ctx)
+activate PR
+PR -> TR: get_level("status-validator")
+TR --> PR: TRUSTED
+PR -> SV: execute(HookContext reale)
+SV --> PR: ctx.abort=True,\nuser_message="Assegnazione non valida"
+PR -> PR: interrompe il ciclo
+PR --> AS: OperationAbortedError(user_message,\nabort_reason)
+deactivate PR
+
+== BEFORE SANDBOXED ignorato ==
+AS -> PR: fire(BEFORE_CREATE_ASSIGNMENT, ctx)
+activate PR
+PR -> TR: get_level("notify-on-create")
+TR --> PR: SANDBOXED
+PR -> PR: crea ScopedHookContext\nsenza content/raw_content/file_bytes
+PR -> SN: execute(scoped_context)
+SN --> PR: abort=True,\nresult modificato
+PR -> PR: log warning; ignora mutazioni sandbox
+PR --> AS: HookContext reale invariato
+deactivate PR
+
+== AFTER con eccezione ==
+ACS -> PR: fire(AFTER_UPDATE_STATUS, ctx con result=activity)
+activate PR
+PR -> TR: get_level("notify-on-create")
+TR --> PR: SANDBOXED
+PR -> SN: execute(scoped_context)
+SN --> PR: Exception("timeout")
+PR -> PR: log exception; continua
+PR --> ACS: HookContext reale
+deactivate PR
+@enduml

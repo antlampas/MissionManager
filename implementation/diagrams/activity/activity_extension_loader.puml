@@ -1,0 +1,58 @@
+@startuml activity_extension_loader
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title ExtensionLoader.load_all() ed ExtensionRegistry.execute()
+start
+:Riceve scan_paths, InstalledManifestRegistry e service;
+if (scan_paths vuoti?) then (si)
+  :return [];
+  stop
+endif
+if (InstalledManifestRegistry vuoto?) then (si)
+  :Log warning;\nnessuna estensione caricata;
+  stop
+endif
+
+while (Directory di scan successiva?) is (si)
+  if (scan_dir contiene manifest.json + extension.py?) then (si)
+    :Aggiunge scan_dir come bundle;
+  else (no)
+    :Aggiunge solo child directory con\nmanifest.json + extension.py;
+  endif
+endwhile (no)
+
+while (Bundle successivo?) is (si)
+  :Legge manifest.json senza import;
+  if (manifest non valido o senza id?) then (si)
+    :Log error; salta bundle;
+  else (no)
+    :entry = InstalledManifestRegistry.get_entry(id);
+    if (entry assente?) then (si)
+      :Log error; salta bundle;
+    else (no)
+      :Verifica sha256(manifest.json) == entry.manifest_checksum;
+      :Verifica sha256(extension.py) == entry.code_checksum\nE manifest.code_checksum coerente;
+      if (verifica fallita?) then (si)
+        :Log error; salta bundle;
+      else (no)
+        :Importa extension.py;
+        :Istanzia Extension(manifest=..., **services compatibili);
+        :Aggiunge _LoadedExtension alla lista;
+      endif
+    endif
+  endif
+endwhile (no)
+
+:Bootstrap registra ogni estensione\ncon ExtensionRegistry.register();
+
+partition "Runtime execute" {
+  :Frontend costruisce ExtensionRequest\n(operator_id, params, body, subject?);
+  :ExtensionRegistry.execute(ext_id, request);
+  if (ext_id non registrato?) then (si)
+    :NotFoundError;
+    stop
+  endif
+  :extension.execute(request)\noppure execute(request, subject) legacy;
+  :Restituisce ExtensionResult(status_code, body/data, message);
+}
+stop
+@enduml

@@ -1,0 +1,357 @@
+@startuml class_ports
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Layer 2 — Contracts (typing.Protocol)
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+skinparam interface {
+  BackgroundColor #E8F4FD
+  BorderColor     #2980B9
+  FontColor       #1A5276
+}
+
+skinparam class {
+  BackgroundColor<<abstract>>     #F4ECF7
+  BorderColor<<abstract>>         #8E44AD
+  FontColor<<abstract>>           #6C3483
+
+  BackgroundColor<<dataclass>>    #EDFAF1
+  BorderColor<<dataclass>>        #82E0AA
+  FontColor<<dataclass>>          #145A32
+
+  BackgroundColor<<enum>>         #EBF5FB
+  BorderColor<<enum>>             #1A5276
+  FontColor<<enum>>               #154360
+}
+
+skinparam ArrowColor #2980B9
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+
+note as INTRO
+  I contratti del Layer 2 sono dichiarati come typing.Protocol
+  con @runtime_checkable (tipizzazione strutturale — duck typing).
+  I service dipendono SOLO da queste interfacce, mai dagli adapter.
+  MissionExtension è un Protocol: ExtensionLoader ispeziona
+  il costruttore dell'adapter concreto e inietta solo manifest
+  e service accettati.
+  I service ricevono le implementazioni via dependency injection
+  al bootstrap dell'applicazione.
+end note
+
+' ==========================================
+' Repository generici e specializzati
+' ==========================================
+interface BaseRepository<T> {
+  +get(id: UUID) T
+  +list(filters: dict) list[T]
+  +save(entity: T) T
+  +delete(id: UUID) bool
+  +exists(id: UUID) bool
+}
+
+note right of BaseRepository
+  typing.Protocol con @runtime_checkable.
+  Contratto generico per tutti i repository
+  di entità di dominio.
+  list(filters): dizionario di criteri di filtro;
+  la semantica dipende dall'implementazione
+  (es. {"status": "IN_PROGRESS"}).
+  save(): crea o aggiorna (upsert semantico).
+  delete(): restituisce True se l'entità esisteva.
+end note
+
+interface MissionRepository {
+  +get_by_title(title: str) Optional[Mission]
+  +get_for_update(id: UUID) Mission
+}
+
+interface MissionAssignmentRepository {
+  +get_by_mission(mid: UUID) list[MissionAssignment]
+  +get_by_assignee(id: UUID) list[MissionAssignment]
+  +get_by_status(s: Status) list[MissionAssignment]
+  +count_by_mission(mid: UUID) int
+  +count_active_by_mission(mid: UUID) int
+}
+
+note right of MissionAssignmentRepository
+  count_active_by_mission(): conta gli assignment
+  in stato operativo per la mission data:
+  ASSIGNED + IN_PROGRESS.
+  UNASSIGNED è una bozza e non viene contato.
+  Usato da AssignmentService per verificare
+  AssignmentPolicy.max_concurrent prima di
+  creare un nuovo MissionAssignment.
+  count_by_mission(): conta il totale storico
+  (inclusi COMPLETED e FAILED) per verificare
+  AssignmentPolicy.max_total.
+end note
+
+interface ObjectiveRepository {
+  +get_by_assignment(assignment_id: UUID) list[Objective]
+}
+
+interface ActivityRepository {
+  +get_by_objective(oid: UUID) list[Activity]
+  +get_by_person(person_id: UUID) list[Activity]
+}
+
+interface BadgeRepository {
+}
+
+note right of BadgeRepository
+  Eredita tutti i metodi da BaseRepository<Badge>.
+  Nessun metodo aggiuntivo: i badge sono cercati
+  per ID o listati senza filtri specializzati.
+end note
+
+interface BadgeAwardRepository {
+  +get_by_person(pid: UUID) list[BadgeAward]
+  +get_by_assignment(assignment_id: UUID) Optional[BadgeAward]
+  +get_by_activity(activity_id: UUID) Optional[BadgeAward]
+  +exists_for_target(type: str, id: UUID) bool
+}
+
+note right of BadgeAwardRepository
+  Estende BaseRepository<BadgeAward>.
+  exists_for_target(): verifica idempotenza prima
+  di creare un BadgeAward duplicato
+  (target_type + target_id come chiave naturale).
+  I BadgeAward sono solo creati e letti,
+  mai aggiornati direttamente dopo la creazione.
+end note
+
+' ==========================================
+' Repository di dominio — Persone e Gruppi
+' ==========================================
+interface PersonRepository {
+  +get_by_group(group_id: UUID) list[Person]
+  +get_by_nickname(nickname: str) Optional[Person]
+}
+
+interface GroupRepository {
+  +add_member(group_id: UUID, person_id: UUID) None
+  +remove_member(group_id: UUID, person_id: UUID) None
+}
+
+note right of PersonRepository
+  typing.Protocol con @runtime_checkable.
+  Contratto di persistenza per Person.
+  Estende BaseRepository<Person>.
+  get_by_group(): restituisce tutte le Person
+  associate al Group dato; usato da ActivityService
+  (verifica perimetro assegnatari), BadgeService
+  (propagazione badge) e PersonService.
+  get() / exists() usati da AssignmentService e
+  ActivityService per verificare l'esistenza di
+  una Person prima di creare assignment o assegnare
+  attività.
+end note
+
+note right of GroupRepository
+  typing.Protocol con @runtime_checkable.
+  Contratto di persistenza per Group.
+  Estende BaseRepository<Group>.
+  exists() usato da AssignmentService per verificare
+  l'esistenza di un Group prima di creare un
+  MissionAssignment con assignee_type == GROUP.
+  add_member()/remove_member(): aggiornano la
+  membership dei Group di dominio; la lettura
+  passa da PersonRepository.get_by_group().
+  Ciclo di vita gestito tramite PersonService.
+end note
+
+' ==========================================
+' Porte di integrazione
+' ==========================================
+interface OperatorIdentityProvider {
+  +get_current_operator() Person
+}
+
+note right of OperatorIdentityProvider
+  Porta distinta da PersonRepository.
+  Stabilisce chi sta effettuando la richiesta corrente.
+  Usata SOLO dai middleware dei frontend (REST, Web, CLI):
+  i service la ricevono indirettamente tramite il
+  contesto della richiesta, mai come dipendenza diretta.
+  L'adapter concreto chiama PersonRepository.get()
+  per materializzare il profilo completo con il Profile ACL.
+  Ogni frontend ha il proprio adapter concreto:
+    REST: valida il token JWT/sessione, poi get()
+    Web: legge la sessione Quart, poi get()
+    CLI: legge la variabile d'ambiente, poi get()
+end note
+
+' ==========================================
+' Porta credenziali locali (autenticazione)
+' ==========================================
+interface CredentialRepository <<Protocol>> {
+  +get(person_id: UUID) Optional[LocalCredential]
+  +save(credential: LocalCredential) None
+  +delete(person_id: UUID) bool
+}
+
+class LocalCredential <<dataclass>> {
+  +person_id: UUID
+  +hashed_password: str
+  +failed_attempts: int = 0
+  +locked_until: Optional[datetime]
+  +must_change_password: bool = False
+}
+
+note right of CredentialRepository
+  Porta delle credenziali locali (domain/auth.py),
+  distinta da PersonRepository: una Person può
+  esistere senza credenziali (backend OIDC puro).
+  LocalCredential trasporta lo stato di hardening
+  del login (tentativi falliti, blocco temporizzato,
+  cambio password forzato) oltre all'hash bcrypt.
+  Implementata da SqlAlchemyCredentialRepository
+  (tabella mm_credentials). Dettaglio del
+  sottosistema: class_auth.puml.
+end note
+
+CredentialRepository ..> LocalCredential : legge / scrive
+
+' ==========================================
+' Porte Plugin / Extension
+' ==========================================
+interface MissionHook {
+  +manifest: PluginManifest
+  +execute(context: HookContext) None
+}
+
+note right of MissionHook
+  typing.Protocol con @runtime_checkable.
+  Il manifest dichiara il nome del plugin,
+  la versione e i HookPoint a cui il plugin
+  si registra (BEFORE_CREATE_ASSIGNMENT,
+  AFTER_UPDATE_STATUS, ecc.).
+  execute(): riceve HookContext e può impostare
+  context.abort = True (con context.abort_reason)
+  per interrompere l'operazione; il service
+  solleva OperationAbortedError in quel caso.
+end note
+
+interface MissionExtension {
+  +manifest: ExtensionManifest
+  +execute(request: ExtensionRequest) ExtensionResult
+}
+
+note right of MissionExtension
+  Protocol strutturale del Layer 2.
+  Le estensioni concrete ricevono dipendenze
+  applicative nel costruttore tramite ExtensionLoader,
+  che ispeziona la firma dell'adapter.
+  manifest: proprietà che dichiara
+  le RouteSpec (endpoint REST aggiuntivi) e
+  CommandSpec (comandi CLI aggiuntivi) esposte.
+  execute(): punto di ingresso chiamato dal service
+  di routing quando una richiesta corrisponde
+  a una RouteSpec/CommandSpec dell'estensione.
+end note
+
+' ==========================================
+' Classi associate (package ports)
+' ==========================================
+package "Tipi di supporto (ports)" {
+  class HookPoint <<enum>> {
+    BEFORE_CREATE_MISSION
+    AFTER_CREATE_MISSION
+    BEFORE_CREATE_ASSIGNMENT
+    AFTER_CREATE_ASSIGNMENT
+    BEFORE_UPDATE_STATUS
+    AFTER_UPDATE_STATUS
+    BEFORE_AWARD_BADGE
+    AFTER_AWARD_BADGE
+  }
+
+  class HookContext <<dataclass>> {
+    +hook_point: HookPoint
+    +operator_id: UUID
+    +payload: dict
+    +result: Any
+    +abort: bool
+    +abort_reason: Optional[str]
+  }
+
+  class PluginManifest <<dataclass>> {
+    +name: str
+    +version: str
+    +description: str
+    +hooks: list[HookPoint]
+  }
+
+  class ExtensionManifest <<dataclass>> {
+    +name: str
+    +version: str
+    +description: str
+    +provides_routes: list[RouteSpec]
+    +provides_commands: list[CommandSpec]
+  }
+
+  class RouteSpec <<dataclass>> {
+    +path: str
+    +method: str
+    +description: str
+  }
+
+  class CommandSpec <<dataclass>> {
+    +name: str
+    +description: str
+  }
+
+  class ExtensionRequest <<dataclass>> {
+    +operator_id: UUID
+    +params: dict
+  }
+
+  class ExtensionResult <<dataclass>> {
+    +data: Any
+    +status_code: int
+    +message: Optional[str]
+  }
+}
+
+note bottom of HookContext
+  Oggetto mutabile passato a tutti i plugin durante fire().
+  operator_id: UUID dell'operatore autenticato che ha
+  avviato l'operazione (passato dal frontend al service).
+  payload: dati dell'operazione in ingresso (es. mission_id,
+  assignee_type, new_status).
+  result: arricchito dai plugin AFTER_* con il risultato
+  dell'operazione già completata.
+  abort/abort_reason: impostati da un plugin BEFORE_* per
+  annullare l'operazione; il service solleva
+  OperationAbortedError se abort == True.
+end note
+
+note bottom of PluginManifest
+  Tutti i dataclass di supporto sono frozen=True
+  (immutabili) ad eccezione di HookContext
+  e ExtensionRequest che sono mutabili per design.
+end note
+
+' ==========================================
+' Relazioni di ereditarietà
+' ==========================================
+MissionRepository --|> BaseRepository
+MissionAssignmentRepository --|> BaseRepository
+ObjectiveRepository --|> BaseRepository
+ActivityRepository --|> BaseRepository
+BadgeRepository --|> BaseRepository
+BadgeAwardRepository --|> BaseRepository
+PersonRepository --|> BaseRepository
+GroupRepository --|> BaseRepository
+
+MissionHook ..> HookContext : usa
+MissionHook ..> PluginManifest : espone
+MissionExtension ..> ExtensionManifest : espone
+MissionExtension ..> ExtensionRequest : riceve
+MissionExtension ..> ExtensionResult : restituisce
+HookContext --> HookPoint
+ExtensionManifest --> RouteSpec
+ExtensionManifest --> CommandSpec
+
+@enduml

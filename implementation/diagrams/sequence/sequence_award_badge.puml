@@ -1,0 +1,129 @@
+@startuml sequence_award_badge
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title BadgeService.award_to_assignment() — Propagazione a Gruppo
+
+skinparam sequenceArrowThickness 2
+skinparam sequenceParticipantBorderColor #7D3C00
+skinparam sequenceParticipantBackgroundColor #FEF9E7
+skinparam sequenceParticipantFontColor #7D3C00
+skinparam sequenceLifeLineBorderColor #7D3C00
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+participant "Frontend" as FE #EEEEEE
+participant "BadgeService" as BS #FDEBD0
+participant "BadgeRepository\n<<port>>" as BR #D5F5E3
+participant "MissionAssignmentRepository\n<<port>>" as AR #D5F5E3
+participant "BadgeAwardRepository\n<<port>>" as BAR #D5F5E3
+participant "PersonRepository\n<<port>>" as PREP #D5F5E3
+participant "PluginRegistry\n<<service>>" as PR #FDEBD0
+participant "EventPublisher\n<<port>>" as EP #D5F5E3
+
+FE -> BS: award_to_assignment(badge_id, assignment_id)
+activate BS
+
+== Validazioni ==
+
+BS -> BR: get(badge_id)
+activate BR
+BR --> BS: badge
+deactivate BR
+
+BS -> AR: get(assignment_id)
+activate AR
+AR --> BS: assignment
+deactivate AR
+
+note over BS
+  Verifica: assignment.status == COMPLETED
+  Se no → ValidationError
+end note
+
+BS -> BAR: exists_for_target("ASSIGNMENT", assignment_id)
+activate BAR
+BAR --> BS: False (nessun award esistente)
+deactivate BAR
+
+== Plugin BEFORE ==
+
+BS -> PR: fire(BEFORE_AWARD_BADGE,\n  HookContext({badge_id, "ASSIGNMENT", assignment_id}))
+activate PR
+PR --> BS: OK
+deactivate PR
+
+== Calcolo destinatari (caso GROUP) ==
+
+alt assignment.assignee_type == GROUP
+  BS -> PREP: get_by_group(assignment.assignee_id)
+  activate PREP
+  PREP --> BS: recipients: list[Person]
+  deactivate PREP
+  note right of PREP
+    Snapshot al momento del conferimento:
+    se i membri cambiano dopo,
+    il BadgeAward non viene aggiornato.
+    recipients = [p.id for p in persons]
+  end note
+else assignment.assignee_type == PERSON
+  note over BS
+    recipients = [assignment.assignee_id]
+  end note
+end
+
+== Creazione BadgeAward ==
+
+note over BS
+  badge_award = BadgeAward(
+    id=uuid4(),
+    badge_id=badge_id,
+    target_type="ASSIGNMENT",
+    target_id=assignment_id,
+    recipients=recipients,
+    awarded_at=now()
+  )
+end note
+
+BS -> BAR: save(badge_award)
+activate BAR
+BAR --> BS: badge_award persistito
+deactivate BAR
+
+note over BS
+  assignment.award_badge(badge_award)
+  Imposta assignment.badge_award in memoria
+  (necessario per FK badge_award_id)
+end note
+
+BS -> AR: save(assignment)
+activate AR
+AR --> BS: assignment aggiornato (badge_award_id persistito)
+deactivate AR
+
+== Plugin AFTER ==
+
+BS -> PR: fire(AFTER_AWARD_BADGE,\n  HookContext(result={badge_award, recipients_count}))
+activate PR
+PR --> BS: OK
+deactivate PR
+
+== Evento di dominio ==
+
+BS -> EP: publish(BadgeAwarded(\n  badge_award_id, badge_id,\n  "ASSIGNMENT", assignment_id,\n  recipient_ids))
+activate EP
+EP --> BS: OK
+deactivate EP
+
+BS --> FE: BadgeAwardDTO
+deactivate BS
+
+note over FE
+  BadgeAwardDTO include:
+  - badge: BadgeDTO (embedded)
+  - target_type, target_id
+  - recipients: list[str]
+  - recipients_count: int
+  - awarded_at: str (ISO 8601)
+end note
+
+@enduml

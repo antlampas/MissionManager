@@ -1,0 +1,320 @@
+@startuml class_domain
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Dominio — Entità e Value Objects (Implementazione Python)
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+skinparam class {
+  BackgroundColor<<entity>>       #FEF9E7
+  BorderColor<<entity>>           #E67E22
+  FontColor<<entity>>             #7D3C00
+
+  BackgroundColor<<value object>> #EDFAF1
+  BorderColor<<value object>>     #82E0AA
+  FontColor<<value object>>       #145A32
+}
+
+skinparam enum {
+  BackgroundColor #EBF5FB
+  BorderColor     #1A5276
+  FontColor       #154360
+}
+
+skinparam ArrowColor #E67E22
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+
+' ==========================================
+' Enumerazioni
+' ==========================================
+enum Status {
+  UNASSIGNED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  --
+  +can_transition_to(s: Status) bool
+  +is_terminal() bool
+}
+
+note right of Status
+  Enum comportamentale: contiene la logica
+  di transizione di stato interna al dominio.
+  _TRANSITIONS: dict[Status, set[Status]] —
+  dizionario privato che definisce gli archi
+  ammessi della macchina a stati.
+  can_transition_to() restituisce bool; entity
+  e policy lo usano per sollevare
+  StatusTransitionError quando necessario.
+  is_terminal(): True per COMPLETED e FAILED.
+  Terminali → nessuna ulteriore transizione.
+end note
+
+enum AssigneeType {
+  PERSON
+  GROUP
+}
+
+enum ZoneType {
+  GEOGRAPHIC
+  VIRTUAL
+}
+
+' ==========================================
+' Value Objects
+' ==========================================
+class AssignmentPolicy <<value object>> {
+  +max_total: Optional[int]
+  +max_concurrent: Optional[int]
+  --
+  +__post_init__()
+  +{static} unlimited() AssignmentPolicy
+  +{static} once() AssignmentPolicy
+  +{static} once_active() AssignmentPolicy
+}
+
+note right of AssignmentPolicy
+  @dataclass(frozen=True) — immutabile.
+  Factory methods:
+    unlimited(): max_total=None, max_concurrent=None
+    once(): max_total=1, max_concurrent=None
+    once_active(): max_total=None, max_concurrent=1
+  __post_init__(): se entrambi i campi sono
+  valorizzati, verifica max_total >= max_concurrent;
+  solleva ValidationError in caso contrario.
+  Usata da AssignmentService per decidere
+  se un nuovo MissionAssignment è ammesso.
+end note
+
+class Profile <<value object>> {
+  +level: int = ANON_SENTINEL
+  +groups: frozenset[str]
+  --
+  {static} +anonymous() Profile
+  +stored_groups() list[str]
+}
+
+note right of Profile
+  @dataclass(frozen=True) — immutabile
+  (domain/acl.py). Livello: più basso =
+  più privilegiato; default = sentinella
+  anonima. groups include sempre il gruppo
+  universale "public" (normalizzato in
+  __post_init__). Valutato dal sistema ACL
+  (AuthorizationPolicy sulle AclEntry) nel
+  middleware dei frontend, mai dai service.
+  Vedi class_acl.puml per il sistema completo.
+end note
+
+' ==========================================
+' Entità principali (missioni, badge)
+' ==========================================
+class Mission <<entity>> {
+  +id: UUID
+  +title: str
+  +description: str
+  +assignment_policy: AssignmentPolicy
+  +objectives: list[Objective]
+  --
+  +validate()
+}
+
+note right of Mission
+  @dataclass.
+  Template strutturale: definisce il blueprint
+  degli obiettivi e delle attività.
+  Non porta stato né esito propri.
+  Immutabile dopo la creazione: obiettivi e
+  attività si definiscono solo nel costruttore
+  (MissionService.create); nessun metodo per
+  aggiungerli o modificarli a posteriori.
+  assignment_policy: vincola quanti
+  MissionAssignment possono essere creati;
+  default: AssignmentPolicy.unlimited().
+end note
+
+class MissionAssignment <<entity>> {
+  +id: UUID
+  +mission_id: UUID
+  +assignee_type: Optional[AssigneeType]
+  +assignee_id: Optional[UUID]
+  +status: Status
+  +objectives: list[Objective]
+  +badge_award: Optional[BadgeAward]
+  --
+  +assign_to(type: AssigneeType, id: UUID)
+  +update_status(s: Status)
+  +award_badge(award: BadgeAward)
+  +is_completed() bool
+  +compute_outcome() str
+  +validate()
+}
+
+note right of MissionAssignment
+  @dataclass — mutabile.
+  Entità vivente: nasce da una Mission e porta
+  la propria copia istanziata di obiettivi e
+  attività, indipendente dagli altri assignment.
+  assign_to(): imposta assignee_type e assignee_id;
+  se status == UNASSIGNED, transisce ad ASSIGNED.
+  update_status(): invoca Status.can_transition_to()
+  prima di aggiornare; solleva StatusTransitionError.
+  compute_outcome(): calcola l'esito aggregando
+  Objective.compute_outcome() per tutti gli obiettivi.
+  BadgeAward: creato solo quando status == COMPLETED.
+end note
+
+class Objective <<entity>> {
+  +id: UUID
+  +description: str
+  +assignment_id: Optional[UUID]
+  +activities: list[Activity]
+  --
+  +compute_outcome() str
+  +validate()
+}
+
+note right of Objective
+  @dataclass — mutabile.
+  compute_outcome(): aggrega gli esiti delle
+  Activity contenute (tutte COMPLETED → successo,
+  almeno una FAILED → fallimento, altrimenti in corso).
+  assignment_id: None per gli Objective blueprint (parte di Mission);
+  impostato da AssignmentService al momento della
+  replicazione del blueprint in un MissionAssignment.
+end note
+
+class Activity <<entity>> {
+  +id: UUID
+  +title: str
+  +description: str
+  +status: Status
+  +assignees: list[UUID]
+  +objective_id: UUID
+  +badge_award: Optional[BadgeAward]
+  --
+  +update_status(s: Status)
+  +validate()
+}
+
+note right of Activity
+  @dataclass — mutabile.
+  assignees: lista di UUID di Person del dominio.
+  Almeno un assegnatario richiesto prima della
+  transizione a IN_PROGRESS.
+  update_status(): invoca Status.can_transition_to()
+  prima di aggiornare; la transizione IN_PROGRESS
+  propagata automaticamente a MissionAssignment
+  da ActivityService.update_status().
+  badge_award: impostato da BadgeService
+  quando l'Activity è COMPLETED.
+  objective_id: FK verso Objective.
+end note
+
+class Badge <<entity>> {
+  +id: UUID
+  +name: str
+  +description: str
+  +image_url: Optional[str]
+}
+
+class BadgeAward <<entity>> {
+  +id: UUID
+  +badge_id: UUID
+  +target_type: str
+  +target_id: UUID
+  +recipients: list[UUID]
+  +awarded_at: datetime
+}
+
+note right of BadgeAward
+  @dataclass — mutabile.
+  target_type / target_id: identificano la risorsa
+  a cui il badge è associato ("assignment" o "activity").
+  recipients: lista di UUID di Person che ricevono
+  il badge; per un assignment di tipo GROUP vengono
+  risolti tramite PersonRepository.get_by_group().
+  awarded_at: timestamp UTC impostato da BadgeService
+  al momento della creazione.
+end note
+
+' ==========================================
+' Entità di dominio — Persone, Gruppi, Zone
+' ==========================================
+class Person <<entity>> {
+  +id: UUID
+  +nicknames: list[str]
+  +acl: Profile
+  --
+  +primary_nickname() str
+  +validate()
+}
+
+class Group <<entity>> {
+  +id: UUID
+  +zone: Optional[Zone]
+  --
+  +validate()
+}
+
+class Zone <<entity>> {
+  +id: UUID
+  +type: ZoneType
+  +name: str
+  +description: Optional[str]
+  --
+  +validate()
+}
+
+note right of Person
+  @dataclass — mutabile.
+  Operatore del dominio gestito da PersonService.
+  nicknames: lista di alias per la visualizzazione;
+  primary_nickname() restituisce il primo elemento.
+  acl: Profile valutato dal sistema ACL nel
+  middleware dei frontend (AuthMiddleware /
+  ACLMiddleware / require_acl), mai nei service.
+  Persistita tramite PersonRepository.
+end note
+
+note right of Group
+  @dataclass — mutabile.
+  Raggruppa persone per assegnazione collettiva.
+  I membri vengono risolti tramite
+  PersonRepository.get_by_group() al momento
+  del bisogno (es. propagazione badge, verifica
+  perimetro assegnatari delle Activity).
+  Persistita tramite GroupRepository.
+  Ciclo di vita gestito da PersonService.
+end note
+
+note right of Zone
+  @dataclass — mutabile.
+  Attributo contestuale opzionale di un Group.
+  GEOGRAPHIC: zona geografica reale.
+  VIRTUAL: spazio non fisico (web, cloud, ecc.).
+  Persistita assieme al Group che la riferisce.
+end note
+
+' ==========================================
+' Relazioni
+' ==========================================
+Mission --> AssignmentPolicy : policy
+Mission "1" *-- "0..*" Objective : blueprint
+MissionAssignment --> Mission : si basa su
+MissionAssignment "1" *-- "0..*" Objective : istanze live
+MissionAssignment --> Status : ha stato
+MissionAssignment --> AssigneeType : tipo assegnatario
+MissionAssignment "0..1" --> "0..1" BadgeAward : badge completamento
+Objective "1" *-- "0..*" Activity : attività
+Activity --> Status : ha stato
+Activity "0..1" --> "0..1" BadgeAward : badge completamento
+BadgeAward --> Badge : definizione badge
+BadgeAward ..> Person : recipients (UUID refs)
+Group --> Zone : zona geografica/virtuale
+Zone --> ZoneType
+Person --> Profile : profilo ACL
+
+@enduml

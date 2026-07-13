@@ -1,0 +1,103 @@
+@startuml sequence_update_status
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title ActivityService.update_status() — con Auto-Cascade al MissionAssignment Padre
+
+skinparam sequenceArrowThickness 2
+skinparam sequenceParticipantBorderColor #7D3C00
+skinparam sequenceParticipantBackgroundColor #FEF9E7
+skinparam sequenceParticipantFontColor #7D3C00
+skinparam sequenceLifeLineBorderColor #7D3C00
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+participant "Frontend" as FE #EEEEEE
+participant "ActivityService" as ACS #FDEBD0
+participant "ActivityRepository\n<<port>>" as AR #D5F5E3
+participant "ObjectiveRepository\n<<port>>" as OR #D5F5E3
+participant "MissionAssignmentRepository\n<<port>>" as MAR #D5F5E3
+participant "PluginRegistry\n<<service>>" as PR #FDEBD0
+participant "EventPublisher\n<<port>>" as EP #D5F5E3
+
+FE -> ACS: update_status(activity_id, IN_PROGRESS)
+activate ACS
+
+== Caricamento e validazione ==
+
+ACS -> AR: get(activity_id)
+activate AR
+AR --> ACS: activity
+deactivate AR
+
+note over ACS
+  activity.status.can_transition_to(IN_PROGRESS) → True
+  len(activity.assignees) ≥ 1 → OK
+end note
+
+== Plugin BEFORE ==
+
+ACS -> PR: fire(BEFORE_UPDATE_STATUS,\n  HookContext({activity_id, "ACTIVITY", IN_PROGRESS}))
+activate PR
+PR --> ACS: OK (abort=False)
+deactivate PR
+
+== Aggiornamento attività ==
+
+ACS -> ACS: activity.update_status(IN_PROGRESS)
+ACS -> AR: save(activity)
+activate AR
+AR --> ACS: activity aggiornata
+deactivate AR
+
+== Auto-cascade al padre ==
+
+ACS -> OR: get(activity.objective_id)
+activate OR
+OR --> ACS: objective
+deactivate OR
+
+ACS -> MAR: get(objective.assignment_id)
+activate MAR
+MAR --> ACS: assignment
+deactivate MAR
+
+alt assignment.status == ASSIGNED
+  note over ACS
+    L'assignment padre era ASSIGNED:
+    deve essere portato automaticamente a IN_PROGRESS
+  end note
+  ACS -> ACS: assignment.update_status(IN_PROGRESS)
+  ACS -> MAR: save(assignment)
+  activate MAR
+  note right of MAR
+    Le due save() producono solo flush:
+    SqlAlchemyUnitOfWork le conferma in
+    un'unica transazione al termine.
+    Se una fallisce, nessuna persiste.
+  end note
+  MAR --> ACS: assignment aggiornato
+  deactivate MAR
+else assignment già IN_PROGRESS o terminale
+  note over ACS
+    Nessuna azione sul padre
+  end note
+end
+
+== Plugin AFTER ==
+
+ACS -> PR: fire(AFTER_UPDATE_STATUS,\n  HookContext(result=activity))
+activate PR
+PR --> ACS: OK
+deactivate PR
+
+== Evento di dominio ==
+
+ACS -> EP: publish(ActivityStatusChanged\n  (activity_id, old_status, IN_PROGRESS))
+activate EP
+EP --> ACS: OK
+deactivate EP
+
+ACS --> FE: ActivityDTO (status=IN_PROGRESS)
+deactivate ACS
+
+@enduml

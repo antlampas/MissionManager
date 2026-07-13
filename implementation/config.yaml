@@ -1,0 +1,127 @@
+# SPDX-License-Identifier: CC-BY-SA-4.0
+# MissionManager — configurazione dell'applicazione (ambiente di sviluppo)
+#
+# I comandi vanno lanciati da questa cartella (implementation/) così che il
+# package `src` sia importabile e i percorsi relativi qui sotto siano corretti:
+#
+#   python -m src --config config.yaml mission list
+#   MISSIONMANAGER_CONFIG_FILE=config.yaml MISSIONMANAGER_SECRET_KEY=dev-secret-at-least-32-characters \
+#     hypercorn "src.asgi_web:app" --bind 127.0.0.1:8000
+#
+# Letta dai loader modulari per concern in src/config.py (DatabaseConfigLoader,
+# SecurityConfigLoader, CliConfigLoader, PluginConfigLoader, ExtensionConfigLoader,
+# AclConfigLoader, WebConfigLoader, RealtimeConfigLoader). Ogni valore può essere
+# sovrascritto dalla variabile d'ambiente MISSIONMANAGER_* corrispondente
+# (l'ambiente ha priorità sul file).
+#
+# IMPORTANTE: il segreto di sessione NON va messo qui. Fornirlo sempre via
+# MISSIONMANAGER_SECRET_KEY (almeno 32 caratteri; obbligatoria per Web App e
+# autenticazione locale). Anche MISSIONMANAGER_OIDC_ADMIN_TOKEN si passa solo via
+# ambiente.
+
+# ---------------------------------------------------------------------------
+# Persistenza — database principale (missioni, incarichi, obiettivi, attività,
+# badge, ACL). URL SQLAlchemy: PostgreSQL o MySQL.
+# ---------------------------------------------------------------------------
+database:
+  url: postgresql+psycopg2://localhost/missionmanager
+  pool_size: 5
+  max_overflow: 10
+
+# ---------------------------------------------------------------------------
+# Frontend Web / sessione Quart
+# ---------------------------------------------------------------------------
+web:
+  theme: default
+  secure_cookies: false         # false per dev locale su HTTP; true dietro TLS
+
+# ---------------------------------------------------------------------------
+# Sicurezza — umbrella: backend persone, autenticazione, OIDC, identità CLI.
+# ---------------------------------------------------------------------------
+security:
+  # Backend persone/gruppi + parametri OIDC lato admin API / validazione token.
+  persons:
+    backend: local              # local (SQLAlchemy) | oidc (Authentik/Keycloak)
+    # Per backend: oidc
+    # oidc_url: https://auth.example.com
+    # provider: authentik        # authentik | keycloak
+    # realm: master              # obbligatorio SOLO per Keycloak
+    # jwks_url: https://auth.example.com/application/o/missionmanager/jwks/   # REST + auth oidc
+    # audience: missionmanager   # REST + auth oidc
+    # issuer: https://auth.example.com/application/o/missionmanager/
+    # subject_field: uuid        # campo IdP a cui corrisponde il claim `sub`;
+    #                            # ometti se sub == id admin (Keycloak; Authentik
+    #                            # Subject mode "Based on the User's ID").
+    # cache_ttl: 30              # TTL (s) cache get() utenti OIDC; <=0 disabilita
+    # admin_token: impostare con MISSIONMANAGER_OIDC_ADMIN_TOKEN
+
+  # Autenticazione. Usa auth.backend=oidc senza MISSIONMANAGER_OIDC_ADMIN_TOKEN
+  # per login OIDC con anagrafica locale. Se auth.backend=oidc e sono presenti
+  # MISSIONMANAGER_OIDC_URL + MISSIONMANAGER_OIDC_ADMIN_TOKEN, il backend persone
+  # viene selezionato come OIDC e le route Web/REST/CLI gestiscono utenti/gruppi
+  # via admin API dell'IdP, salvo opt-out esplicito MISSIONMANAGER_PERSON_BACKEND=local.
+  # La REST API usa Authorization: Bearer; con backend locale il Bearer è un JWT
+  # applicativo, con backend OIDC è l'access token dell'identity provider.
+  auth:
+    backend: local              # local (password + JWT locale) | oidc
+    token_ttl: 3600             # validità (secondi) del JWT locale
+    # Revoca JWT locale condivisa tra worker. Se omesso e security.rate_limit.redis_url
+    # è impostato, viene riusato quel Redis; altrimenti revoca in-memory per processo.
+    # revocation_redis_url: redis://localhost:6379/0
+    # revocation_redis_prefix: missionmanager
+    password:
+      min_length: 12
+      require_uppercase: true
+      require_digit: true
+      require_special: true
+    max_failed_attempts: 5
+    lockout_duration_seconds: 300
+    # Per backend: oidc (Authorization Code flow):
+    # oidc_client_id: missionmanager
+    # oidc_client_secret: ...    # meglio via MISSIONMANAGER_OIDC_CLIENT_SECRET
+    # oidc_redirect_uri: http://localhost:8000/auth/callback
+
+  # Identità con cui la CLI esegue le operazioni
+  # (sovrascrivibile con MISSIONMANAGER_CLI_IDENTITY_MODE).
+  cli:
+    identity_mode: anonymous    # anonymous (sola lettura pubblica) | user
+    # operator_id: 00000000-0000-0000-0000-000000000000  # richiesto se identity_mode: user
+    #                                                     # (o MISSIONMANAGER_OPERATOR_ID)
+
+  # Rate limit REST. Di default e in-memory per processo; con Redis diventa
+  # condiviso tra worker.
+  rate_limit:
+    window_seconds: 60
+    redis_prefix: missionmanager
+    # redis_url: redis://localhost:6379/0
+
+# ---------------------------------------------------------------------------
+# ACL — soglie di bootstrap (DESIGN §10). Convenzione: numero più basso = più
+# privilegio; la soglia L è soddisfatta da chi ha livello <= L. Usate una sola
+# volta, per seminare le entry di default quando il repository ACL è vuoto; da lì
+# in poi le regole si amministrano come AclEntry (pagina /acl e REST).
+# ---------------------------------------------------------------------------
+acl:
+  read_threshold: 100           # lettura (VIEW/LIST)
+  write_threshold: 50           # mutazioni operative (Gestore)
+  admin_threshold: 0            # anagrafica, profili, MANAGE_ACL (Amministratore)
+  seeding_enabled: true         # alla creazione, il creatore riceve MANAGE_ACL sulla risorsa
+
+# ---------------------------------------------------------------------------
+# Realtime WebSocket (opzionale). Senza redis_url le notifiche restano in-process;
+# con Redis vengono distribuite fra processi REST/Web separati.
+# ---------------------------------------------------------------------------
+realtime:
+  redis_prefix: missionmanager
+  # redis_url: redis://localhost:6379/0
+
+# ---------------------------------------------------------------------------
+# Plugin ed Estensioni (disabilitati finché non si indicano percorsi di scan).
+# ---------------------------------------------------------------------------
+plugins:
+  scan_paths: []
+  trust_registry_path: null     # JSON: {plugin_name: {trust_level: "TRUSTED", code_checksum: "..."}}
+
+extensions:
+  scan_paths: []
+  installed_registry_path: null # JSON: {ext_name: {code_checksum: ...}}; layout ext_name/extension.py

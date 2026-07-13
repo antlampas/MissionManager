@@ -1,0 +1,52 @@
+@startuml activity_acl_evaluation
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Implementazione - AuthorizationPolicy.is_allowed(principal, operation, resource)
+
+start
+
+:profile = profiles.profile_of(principal_id);
+note right
+  principal_id None o persona
+  inesistente → Profile.anonymous()
+  = (ANON_SENTINEL, {"public"})
+end note
+
+partition "_evaluate (ricorsiva, con set visited anti-ciclo)" {
+  :entries = repo.list_for(resource, operation);
+
+  if (entries non vuoto?) then (sì)
+    :matching = [e for e in entries
+     if e.matches(principal_id, profile)];
+    if (DENY in matching?) then (sì)
+      :return False;
+      stop
+    elseif (ALLOW in matching?) then (sì)
+      :return True;
+      stop
+    else (no)
+      :return False (default deny);
+      stop
+    endif
+  else (no)
+    if (operation in NON_INHERITABLE?\n(MANAGE_ACL)) then (sì)
+      :return False;
+      stop
+    endif
+    :parents = hierarchy.parents_of(resource);
+    if (parents vuoto?) then (sì)
+      :return False;
+      stop
+    else (no)
+      :return any(_evaluate(parent)
+       for parent in parents);
+      note right
+        OR permissiva: basta un padre
+        che concede; un DENY su un
+        padre non blocca gli altri
+      end note
+      stop
+    endif
+  endif
+}
+
+@enduml

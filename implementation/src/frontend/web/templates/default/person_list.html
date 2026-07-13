@@ -1,0 +1,68 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Persone — Mission Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-header__title">Persone</h1>
+  <p class="page-header__meta">Anagrafica degli operatori e dei loro profili ACL</p>
+  <div class="page-header__actions">
+    <a href="{{ url_for('mission_web.new_person_form') }}" class="btn btn-primary">
+      ＋ Nuova persona
+    </a>
+  </div>
+</div>
+
+{% if persons %}
+  <div class="card" style="padding:0;">
+    <div class="table-wrapper">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Nickname</th>
+            <th>Altri nickname</th>
+            <th>Livello ACL</th>
+            <th>Gruppi ACL</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in persons %}
+          <tr>
+            <td>
+              <a href="{{ url_for('mission_web.get_person', id=p.id) }}">
+                {{ p.primary_nickname }}
+              </a>
+            </td>
+            <td class="text-muted text-sm">
+              {{ p.nicknames[1:] | join(', ') if p.nicknames | length > 1 else '—' }}
+            </td>
+            <td>{{ p.acl_level }}</td>
+            <td>{{ p.acl_groups | join(', ') if p.acl_groups else '—' }}</td>
+            <td class="text-right">
+              <a href="{{ url_for('mission_web.get_person', id=p.id) }}"
+                 class="btn btn-secondary btn-sm">Dettaglio →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state__icon" aria-hidden="true">👤</div>
+    <h2 class="empty-state__title">Nessuna persona</h2>
+    <p class="empty-state__desc">Non ci sono ancora persone registrate.</p>
+    <div style="margin-top:1rem;">
+      <a href="{{ url_for('mission_web.new_person_form') }}" class="btn btn-primary">
+        ＋ Crea la prima persona
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

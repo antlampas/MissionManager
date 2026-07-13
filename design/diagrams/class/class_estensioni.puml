@@ -1,0 +1,160 @@
+@startuml class_estensioni
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Sistema Estensioni Unificato
+skinparam classAttributeIconSize 0
+
+class RouteSpec <<value object>> {
+  +path: str
+  +method: str
+  +description: str
+}
+
+class CommandSpec <<value object>> {
+  +name: str
+  +description: str
+}
+
+class ExtensionManifest <<value object>> {
+  +id: str
+  +name: str
+  +version: str
+  +description: str
+  +code_checksum: str
+  +provides_routes: list<RouteSpec>
+  +provides_commands: list<CommandSpec>
+}
+
+class ExtensionRequest <<value object>> {
+  +operator_id: UUID?
+  +params: dict
+  +body: dict
+  +subject: Any?
+}
+
+class ExtensionResult <<value object>> {
+  +status_code: int
+  +body: Any
+  +data: Any
+  +message: str?
+}
+
+interface MissionExtension <<port>> {
+  +manifest: ExtensionManifest
+  +execute(request: ExtensionRequest): ExtensionResult
+}
+
+class InstalledExtensionEntry <<value object>> {
+  +extension_id: str
+  +manifest_checksum: str
+  +code_checksum: str
+}
+
+class InstalledManifestRegistry <<infrastructure>> {
+  -_entries: dict<str, InstalledExtensionEntry>
+  +reload(): void
+  +get_entry(ext_id): InstalledExtensionEntry?
+  +get_manifest_checksum(ext_id): str?
+  +get_code_checksum(ext_id): str?
+  +is_approved(ext_id): bool
+  +is_empty(): bool
+}
+
+class ExtensionLoader <<infrastructure>> {
+  -_scan_paths: list<str>
+  -_registry: InstalledManifestRegistry
+  -_services: dict<str, Any>
+  +load_all(): list<MissionExtension>
+}
+
+class ExtensionRegistry <<service>> {
+  -_extensions: dict<str, MissionExtension>
+  -_registered_routes: set<(method,path)>
+  +register(extension: MissionExtension): void
+  +unregister(ext_id: str): void
+  +get(ext_id: str): MissionExtension?
+  +list(): list<ExtensionManifest>
+  +execute(ext_id: str, request: ExtensionRequest): ExtensionResult
+}
+
+class MissionStatsExtension <<example>>
+class BadgeExportExtension <<example>>
+class AssignmentTimelineExtension <<example>>
+class MissionService
+class AssignmentService
+class BadgeService
+class PersonService
+class RestApp
+class create_web_blueprint
+class CLIApp
+
+ExtensionManifest o-- RouteSpec
+ExtensionManifest o-- CommandSpec
+MissionExtension --> ExtensionManifest
+MissionExtension ..> ExtensionRequest
+MissionExtension ..> ExtensionResult
+InstalledManifestRegistry o-- InstalledExtensionEntry
+ExtensionLoader --> InstalledManifestRegistry
+ExtensionLoader --> MissionExtension : crea dopo verifica
+ExtensionLoader ..> MissionService
+ExtensionLoader ..> AssignmentService
+ExtensionLoader ..> BadgeService
+ExtensionLoader ..> PersonService
+ExtensionRegistry o-- MissionExtension : per manifest.id
+ExtensionRegistry ..> ExtensionRequest
+ExtensionRegistry ..> ExtensionResult
+
+MissionStatsExtension ..|> MissionExtension
+BadgeExportExtension ..|> MissionExtension
+AssignmentTimelineExtension ..|> MissionExtension
+MissionStatsExtension --> MissionService
+BadgeExportExtension --> BadgeService
+AssignmentTimelineExtension --> MissionService
+AssignmentTimelineExtension --> AssignmentService
+
+RestApp ..> ExtensionRegistry : list() e route dinamiche
+create_web_blueprint ..> ExtensionRegistry : list() e route dinamiche
+CLIApp ..> ExtensionRegistry : list() e comandi dinamici
+
+note right of MissionExtension
+  Porta del Layer 2 espressa come typing.Protocol.
+  Le estensioni concrete ricevono i service applicativi
+  nel costruttore tramite ExtensionLoader.
+  La dipendenza e' Extension -> Services, mai il contrario.
+end note
+
+note right of ExtensionLoader
+  Ogni estensione installabile e' un bundle:
+    <scan_path>/<ext_id>/manifest.json
+    <scan_path>/<ext_id>/extension.py
+
+  Il loader legge manifest.json senza importare codice,
+  verifica manifest_checksum e code_checksum contro
+  InstalledManifestRegistry e importa extension.py
+  solo dopo il successo di entrambe le verifiche.
+end note
+
+note right of ExtensionRegistry
+  register() indicizza per manifest.id.
+  Ogni route deve stare in /extensions/{id}/...
+  o essere esattamente /extensions/{id}; collisioni
+  method+path o id duplicati producono ExtensionConflictError.
+end note
+
+note bottom of MissionStatsExtension
+  id: mission-stats
+  GET /extensions/mission-stats/missions/<mission_id>/stats
+  command: mission-stats
+end note
+
+note bottom of BadgeExportExtension
+  id: badge-export
+  GET /extensions/badge-export/persons/<person_id>/badges
+  command: badge-export
+end note
+
+note bottom of AssignmentTimelineExtension
+  id: assignment-timeline
+  GET /extensions/assignment-timeline/missions/<mission_id>/timeline
+  command: assignment-timeline
+end note
+@enduml

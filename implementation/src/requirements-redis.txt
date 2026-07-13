@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: CC-BY-SA-4.0
+# Supporto opzionale Redis per deployment multi-worker.
+# Installare insieme alle dipendenze base:
+#   pip install -r src/requirements.txt -r src/requirements-redis.txt
+redis>=5.0

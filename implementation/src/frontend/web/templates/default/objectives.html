@@ -1,0 +1,78 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Obiettivi dell'assignment — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_missions') }}">Missioni</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <a href="{{ url_for('mission_web.get_assignment', id=assignment_id) }}">Assignment</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">Obiettivi</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">Obiettivi</h1>
+  <div class="page-header__meta">
+    Assignment <span class="id-chip">{{ assignment_id }}</span>
+  </div>
+</div>
+
+{% if objectives %}
+  <ul class="objective-list">
+    {% for obj in objectives %}
+    <li class="objective-item">
+      <div class="objective-item__header">
+        <h2 class="objective-item__title">{{ obj.description }}</h2>
+        {% if obj.outcome %}
+          <span class="outcome-badge outcome-badge--{{ obj.outcome }}">{{ obj.outcome }}</span>
+        {% else %}
+          <span class="text-muted text-xs">in corso</span>
+        {% endif %}
+      </div>
+
+      {% if obj.activities %}
+        <ul class="activity-list" aria-label="Attività">
+          {% for act in obj.activities %}
+          <li class="activity-item" data-activity-id="{{ act.id }}">
+            <div>
+              <div class="activity-item__title">
+                <a href="{{ url_for('mission_web.get_activity', id=act.id) }}">
+                  {{ act.title }}
+                </a>
+              </div>
+              {% if act.assignees %}
+                <div class="activity-item__meta">
+                  {{ act.assignees | length }} assegnat{{ 'ario' if act.assignees | length == 1 else 'ari' }}
+                </div>
+              {% endif %}
+            </div>
+            <span class="status-badge status-badge--{{ act.status }}">
+              {{ act.status }}
+            </span>
+          </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state__icon" aria-hidden="true">🎯</div>
+    <h2 class="empty-state__title">Nessun obiettivo</h2>
+    <p class="empty-state__desc">Questo assignment non ha ancora obiettivi.</p>
+  </div>
+{% endif %}
+
+<div style="margin-top:1rem;">
+  <a href="{{ url_for('mission_web.get_assignment', id=assignment_id) }}"
+     class="btn btn-secondary">
+    ← Torna all'assignment
+  </a>
+</div>
+
+{% endblock %}

@@ -1,0 +1,42 @@
+@startuml seq_quart_lista_missioni
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Sequenza: Lista MissionAssignment via Web App (async)
+
+actor Browser
+participant "AssignmentRouteHandler\n(Web App)" as Handler
+participant "ACLMiddleware" as ACL
+participant "AssignmentService" as Service
+participant "MissionAssignmentRepository" as Repo
+database "Persistenza" as STORE
+
+Browser -> Handler : GET /missions/<mid>/assignments?status=IN_PROGRESS
+activate Handler
+
+Handler -> ACL : is_allowed(operatore, LIST, MISSION:*)
+activate ACL
+ACL --> Handler : ALLOWED (operatore in g.operator)
+deactivate ACL
+
+Handler -> Service : await list(mission_id,\n  filters={status:"IN_PROGRESS"})
+activate Service
+
+Service -> Repo : await list(filters)
+activate Repo
+Repo -> STORE : recupera assignment filtrati\nper missione e stato
+STORE --> Repo : dati assignment
+Repo --> Service : List[MissionAssignment]
+deactivate Repo
+
+Service --> Handler : List[AssignmentDTO]
+deactivate Service
+
+Handler --> Browser : 200 OK\n[ { id, mission_id,\n    assignee_type, assignee_id,\n    status, objectives }, ... ]
+deactivate Handler
+
+note over Handler, STORE
+  La Web App gestisce ogni richiesta in modo asincrono.
+  L'event loop gestisce l'I/O verso la persistenza senza bloccare.
+  Permette alta concorrenza con un singolo processo.
+end note
+
+@enduml

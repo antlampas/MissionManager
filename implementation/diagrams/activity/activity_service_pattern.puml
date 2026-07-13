@@ -1,0 +1,117 @@
+@startuml activity_service_pattern
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Pattern generale di esecuzione — Service Layer MissionManager
+
+skinparam ActivityBorderColor #784212
+skinparam ActivityBackgroundColor #FEF6EC
+skinparam ActivityFontColor #784212
+skinparam ArrowColor #784212
+skinparam PartitionBorderColor #784212
+skinparam PartitionBackgroundColor #FEF6EC
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+start
+
+:Riceve chiamata dal **Frontend** (Route HTTP o Comando CLI)\ngià autenticato e autorizzato dal middleware;
+
+note right
+  L'ACL è verificata dal middleware
+  (AuthMiddleware / ACLMiddleware / require_acl)
+  tramite AuthorizationPolicy.is_allowed
+  PRIMA che la chiamata arrivi al service.
+  I service non chiamano OperatorIdentityProvider
+  né AuthorizationPolicy.
+end note
+
+partition "1. Validazione input di dominio" {
+  :Verifica campi obbligatori, lunghezze, format;
+  :Verifica invarianti strutturali\n(es. ≥1 obiettivo, ≥1 attività per obiettivo);
+  note right
+    Queste validazioni riguardano la correttezza
+    strutturale del dominio, non l'autorizzazione.
+    Il service rifiuta input malformati prima
+    di toccare qualsiasi repository.
+  end note
+  if (validazione fallisce?) then (sì)
+    :lancia **ValidationError** (HTTP 400 / exit 1);
+    stop
+  endif
+}
+
+partition "2. Verifica esistenza e policy (se applicabile)" {
+  note
+    Questa partizione è eseguita solo dai service che
+    operano su entità già esistenti o che applicano vincoli
+    di policy prima dell'operazione.
+    • Se il service ha bisogno di un'entità esistente:
+        repository.get(id) → NotFoundError se assente.
+    • SOLO in AssignmentService.create(): verifica
+        AssignmentPolicy (max_total, max_concurrent).
+    • Verifica soggetti via PersonRepository.exists()
+        o GroupRepository.exists() (se assegnatario
+        fornito) → NotFoundError.
+  end note
+  if (entità richiesta non trovata\no policy violata?) then (sì)
+    :lancia **NotFoundError** o **ValidationError**\n(HTTP 404/400 / exit 1);
+    stop
+  endif
+  note right
+    La verifica AssignmentPolicy precede il BEFORE hook
+    per evitare che plugin siano invocati per missioni
+    che non possono essere assegnate.
+  end note
+}
+
+partition "3. Plugin BEFORE_* (se plugin_registry presente)" {
+  :Costruisce **HookContext**(hook_point=BEFORE_*,\n  operator_id, payload, abort=False);
+  :plugin_registry.**fire**(BEFORE_*, context);
+  note right
+    plugin_registry è Optional.
+    Se None (test o deployment senza plugin),
+    fire() non viene mai chiamato.
+  end note
+  if (context.abort == True?) then (sì)
+    :lancia **OperationAbortedError** (HTTP 422 / exit 1);
+    stop
+  endif
+}
+
+partition "4. Operazione principale" {
+  note
+    Chiamate ai repository (tramite porte di dominio):
+    • Operazioni di scrittura: save(), update(), delete()
+    • Operazioni di lettura: get(), list_by_*()
+    Per operazioni composite (es. replicazione blueprint,
+    propagazione badge): multiple chiamate ai repository.
+    L'adapter concrete garantisce atomicità delle scritture
+    correlate (transazione SQL o sequenza atomica).
+  end note
+}
+
+partition "5. Plugin AFTER_* (se plugin_registry presente)" {
+  :Aggiorna **HookContext** con result dell'operazione;
+  :plugin_registry.**fire**(AFTER_*, context);
+  note right
+    L'operazione è già completata.
+    Gli hook AFTER_* producono side effect
+    (es. propagazione verso sistemi esterni).
+    Eccezioni degli hook AFTER_* sono catturate
+    e loggate, mai propagate al chiamante.
+  end note
+}
+
+partition "6. Serializzazione e risposta" {
+  :Converte entità di dominio in **DTO**;
+  note right
+    Nessun value object di dominio attraversa
+    il confine Service→Frontend.
+    Il DTO contiene solo tipi primitivi Python.
+  end note
+  :Restituisce **DTO** al Frontend;
+}
+
+stop
+
+@enduml

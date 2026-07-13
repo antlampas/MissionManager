@@ -1,0 +1,272 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}ACL — Mission Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-header__title">ACL</h1>
+  <p class="page-header__meta">
+    Profili delle persone (livello e gruppi) e regole di autorizzazione (entry).
+    Livello più basso = più privilegiato; una soglia L è soddisfatta da chi ha livello &le; L.
+  </p>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+<datalist id="acl-group-options">
+  {% for name in group_names %}<option value="{{ name }}"></option>{% endfor %}
+</datalist>
+
+<!-- ================================================================ -->
+<!-- Profili                                                          -->
+<!-- ================================================================ -->
+<section class="acl-section" aria-labelledby="acl-profiles-title">
+  <div class="acl-section__header">
+    <div>
+      <h2 id="acl-profiles-title">Profili</h2>
+      <p class="form-hint">
+        Il profilo (livello + gruppi) è ciò che le entry valutano per ogni richiedente.
+        Ogni profilo appartiene implicitamente al gruppo universale «public».
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__header">
+      <h3 class="card__title">Assegna profilo</h3>
+    </div>
+    {% if persons %}
+      <form class="acl-inline-form"
+            data-form="acl-profile"
+            data-endpoint="{{ url_for('mission_web.set_acl_profile') }}"
+            data-redirect="{{ url_for('mission_web.acl_management') }}">
+        <div class="form-group">
+          <label class="form-label form-label--required" for="profile_person">Persona</label>
+          <select class="form-control" id="profile_person" data-json="person_id">
+            {% for p in persons %}
+              <option value="{{ p.id }}">{{ p.primary_nickname }} — livello {{ p.acl_level }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group acl-field-sm">
+          <label class="form-label" for="profile_level">Livello</label>
+          <input class="form-control" type="number" id="profile_level" min="0"
+                 data-json="acl_level" data-json-type="int" placeholder="es. 50">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="profile_groups">Gruppi</label>
+          <input class="form-control" type="text" id="profile_groups" list="acl-group-options"
+                 data-json="acl_groups" data-json-optional
+                 placeholder="separati da virgola, es. operators, editors">
+        </div>
+        <button type="submit" class="btn btn-primary" data-submit>Salva profilo</button>
+      </form>
+    {% else %}
+      <p class="text-muted text-sm mb-0">Nessuna persona registrata.</p>
+    {% endif %}
+  </div>
+
+  {% if persons %}
+    <div class="card" style="padding:0;">
+      <div class="table-wrapper">
+        <table class="table">
+          <thead>
+            <tr><th>Persona</th><th>Livello</th><th>Gruppi</th></tr>
+          </thead>
+          <tbody>
+            {% for p in persons %}
+            <tr>
+              <td>
+                <a href="{{ url_for('mission_web.get_person', id=p.id) }}">{{ p.primary_nickname }}</a>
+              </td>
+              <td>{{ p.acl_level }}</td>
+              <td>
+                {% if p.acl_groups %}
+                  <ul class="assignee-list" style="margin:0;">
+                    {% for g in p.acl_groups %}
+                      <li class="assignee-chip">
+                        {{ g }}
+                        <form data-form="acl-profile-group-remove" data-method="DELETE"
+                              data-endpoint="{{ url_for('mission_web.remove_acl_profile_group') }}"
+                              data-redirect="{{ url_for('mission_web.acl_management') }}"
+                              data-confirm="Togliere {{ p.primary_nickname }} dal gruppo «{{ g }}»?"
+                              class="acl-chip-form">
+                          <input type="hidden" data-json="person_id" value="{{ p.id }}">
+                          <input type="hidden" data-json="group" value="{{ g }}">
+                          <button type="submit" class="acl-chip-remove" data-submit
+                                  aria-label="Rimuovi dal gruppo">&times;</button>
+                        </form>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <span class="text-muted text-sm">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+</section>
+
+<!-- ================================================================ -->
+<!-- Entry                                                             -->
+<!-- ================================================================ -->
+<section class="acl-section" aria-labelledby="acl-entries-title">
+  <div class="acl-section__header">
+    <div>
+      <h2 id="acl-entries-title">Regole (entry)</h2>
+      <p class="form-hint">
+        Ogni entry dichiara chi (soggetto + livello/gruppo) può — o non può —
+        eseguire un'operazione su una risorsa. DENY prevale su ALLOW; senza entry
+        applicabili l'esito è negato. Risorsa «{{ type_root_id }}» = radice del tipo
+        (default ereditati); SYSTEM:{{ system_global_id }} = ambito di sistema.
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__header">
+      <h3 class="card__title">Nuova entry</h3>
+    </div>
+    <form class="acl-rule-form"
+          data-form="acl-entry-create"
+          data-endpoint="{{ url_for('mission_web.create_acl_entry') }}"
+          data-redirect="{{ url_for('mission_web.acl_management') }}">
+      <div class="form-group acl-field-sm">
+        <label class="form-label form-label--required" for="entry_rtype">Tipo risorsa</label>
+        <select class="form-control" id="entry_rtype" data-json="resource_type">
+          {% for rt in resource_types %}
+            <option value="{{ rt }}">{{ rt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label form-label--required" for="entry_rid">Id risorsa</label>
+        <input class="form-control" type="text" id="entry_rid" data-json="resource_id"
+               placeholder="UUID, «{{ type_root_id }}» o «{{ system_global_id }}»">
+      </div>
+      <div class="form-group acl-field-sm">
+        <label class="form-label form-label--required" for="entry_op">Operazione</label>
+        <select class="form-control" id="entry_op" data-json="operation">
+          {% for op in operations %}
+            <option value="{{ op }}">{{ op }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group acl-field-sm">
+        <label class="form-label form-label--required" for="entry_perm">Permesso</label>
+        <select class="form-control" id="entry_perm" data-json="permission">
+          {% for perm in permissions %}
+            <option value="{{ perm }}">{{ perm }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="entry_subject">Soggetto</label>
+        <select class="form-control" id="entry_subject" data-json="subject_id" data-json-optional>
+          <option value="">PUBLIC (chiunque)</option>
+          {% for p in persons %}
+            <option value="{{ p.id }}">{{ p.primary_nickname }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group acl-field-sm">
+        <label class="form-label" for="entry_level">Livello &le;</label>
+        <input class="form-control" type="number" id="entry_level" min="0"
+               data-json="level" data-json-type="int" placeholder="soglia">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="entry_group">Gruppo</label>
+        <input class="form-control" type="text" id="entry_group" list="acl-group-options"
+               data-json="group" data-json-optional placeholder="nessuno">
+      </div>
+      <div class="form-group acl-field-sm">
+        <label class="form-label" for="entry_pjoin">Livello/gruppo</label>
+        <select class="form-control" id="entry_pjoin" data-json="profile_join">
+          <option value="OR">OR</option>
+          <option value="AND">AND</option>
+        </select>
+      </div>
+      <div class="form-group acl-field-sm">
+        <label class="form-label" for="entry_sjoin">Soggetto/profilo</label>
+        <select class="form-control" id="entry_sjoin" data-json="subject_join">
+          <option value="AND">AND</option>
+          <option value="OR">OR</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" data-submit>Crea entry</button>
+    </form>
+    <p class="form-hint" style="margin-bottom:0;">
+      Ogni entry richiede almeno uno tra livello e gruppo. Le operazioni mutanti
+      non possono essere concesse al profilo anonimo.
+    </p>
+  </div>
+
+  {% if entries %}
+    <div class="card" style="padding:0;">
+      <div class="table-wrapper">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Risorsa</th>
+              <th>Operazione</th>
+              <th>Permesso</th>
+              <th>Soggetto</th>
+              <th>Livello</th>
+              <th>Gruppo</th>
+              <th>Join</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in entries %}
+            <tr>
+              <td>{{ e.resource_type }}:{{ e.resource_id[:8] ~ '…' if e.resource_id | length > 12 else e.resource_id }}</td>
+              <td>{{ e.operation }}</td>
+              <td>
+                <span class="{{ 'text-success' if e.permission == 'ALLOW' else 'text-danger' }}">
+                  {{ e.permission }}
+                </span>
+              </td>
+              <td>
+                {% if e.subject_type == 'PUBLIC' %}
+                  PUBLIC
+                {% else %}
+                  {{ nickname_by_id.get(e.subject_id, e.subject_id[:8] ~ '…') }}
+                {% endif %}
+              </td>
+              <td>{{ '≤ ' ~ e.level if e.level is not none else '—' }}</td>
+              <td>{{ e.group or '—' }}</td>
+              <td class="text-muted text-sm">{{ e.profile_join }}/{{ e.subject_join }}</td>
+              <td class="text-right">
+                <form data-form="acl-entry-delete" data-method="DELETE"
+                      data-endpoint="{{ url_for('mission_web.delete_acl_entry', entry_id=e.id) }}"
+                      data-redirect="{{ url_for('mission_web.acl_management') }}"
+                      data-confirm="Eliminare la entry {{ e.operation }} su {{ e.resource_type }}:{{ e.resource_id }}?">
+                  <button type="submit" class="btn btn-danger btn-sm" data-submit>Elimina</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <p class="text-muted text-sm">
+      Nessuna entry: il sistema nega ogni operazione (default deny).
+    </p>
+  {% endif %}
+</section>
+
+{% endblock %}

@@ -1,0 +1,57 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Nuovo badge — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_badges') }}">Badge</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">Nuovo badge</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">Nuovo badge</h1>
+  <p class="page-header__meta">Definisci un riconoscimento riutilizzabile.</p>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+<form data-form="badge-create"
+      data-endpoint="{{ url_for('mission_web.create_badge') }}"
+      data-redirect="{{ url_for('mission_web.list_badges') }}">
+  <div class="card">
+    <div class="form-group">
+      <label class="form-label form-label--required" for="name">Nome</label>
+      <input class="form-control" type="text" id="name" data-json="name"
+             placeholder="es. Operazione completata">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="description">Descrizione</label>
+      <textarea class="form-control" id="description" rows="3"
+                data-json="description"
+                placeholder="Descrizione opzionale"></textarea>
+    </div>
+
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label" for="image_url">URL immagine</label>
+      <input class="form-control" type="url" id="image_url"
+             data-json="image_url" data-json-optional
+             placeholder="https://… (opzionale)">
+      <p class="form-hint">Deve essere un URL http o https valido.</p>
+    </div>
+  </div>
+
+  <div class="page-header__actions">
+    <button type="submit" class="btn btn-primary btn-lg" data-submit>Crea badge</button>
+    <a href="{{ url_for('mission_web.list_badges') }}" class="btn btn-secondary">Annulla</a>
+  </div>
+</form>
+
+{% endblock %}

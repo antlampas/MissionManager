@@ -1,0 +1,67 @@
+@startuml activity_status_machine
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Status — Macchina a Stati Comportamentale
+
+skinparam StateBorderColor #1A5276
+skinparam StateBackgroundColor #EBF5FB
+skinparam StateArrowColor #1A5276
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+' ==========================================
+' Parte 1 — Grafo delle transizioni
+' ==========================================
+
+[*] --> UNASSIGNED
+
+UNASSIGNED --> ASSIGNED : assign()
+ASSIGNED --> UNASSIGNED : unassign()\n(ultimo assegnatario, prima di IN_PROGRESS)
+
+ASSIGNED --> IN_PROGRESS : start()
+ASSIGNED --> FAILED : fail()
+
+IN_PROGRESS --> COMPLETED : complete()
+IN_PROGRESS --> FAILED : fail()
+
+COMPLETED : terminale — nessuna uscita
+FAILED : terminale — nessuna uscita
+
+note right of COMPLETED
+  is_terminal() → True
+  Usato da AssignmentService.update_status()
+  insieme ad AssignmentStatusPolicy:
+  il MissionAssignment può diventare
+  COMPLETED solo se l'esito aggregato
+  è COMPLETED (tutte le attività COMPLETED).
+end note
+
+note right of FAILED
+  is_terminal() → True
+end note
+
+note bottom of UNASSIGNED
+  _TRANSITIONS è un dict interno dell'enum; non è un campo pubblico.
+  can_transition_to() è chiamato da MissionAssignment.update_status()
+  e Activity.update_status() PRIMA di qualsiasi scrittura.
+  Se restituisce False: StatusTransitionError(current=self, requested=target).
+end note
+
+' ==========================================
+' Parte 2 — Algoritmo can_transition_to()
+' ==========================================
+
+state "can_transition_to(target_status)" as CAN_TRANSITION {
+
+  state "Cerca target_status.value\nin _TRANSITIONS[self.value]" as LOOKUP
+  state "return True" as TRUE
+  state "return False" as FALSE
+
+  [*] --> LOOKUP
+  LOOKUP --> TRUE : trovato
+  LOOKUP --> FALSE : non trovato
+  TRUE --> [*]
+  FALSE --> [*]
+}
+
+@enduml

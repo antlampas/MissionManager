@@ -1,0 +1,51 @@
+@startuml seq_autenticazione_locale
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma di Sequenza - Autenticazione locale (DESIGN §9.4)
+
+actor Operatore
+participant "Frontend\n(REST / Web)" as FE
+participant "Autenticazione locale" as AUTH
+participant "Credenziali\n(CredentialRepository)" as CRED
+
+Operatore -> FE : login (nickname, password)
+FE -> AUTH : verifica credenziali
+AUTH -> CRED : leggi credenziale del nickname
+CRED --> AUTH : credenziale (o assente)
+
+note right of AUTH
+  Verifica a tempo costante: il costo non dipende
+  dall'esistenza del nickname (anti user-enumeration).
+end note
+
+alt password errata / account inesistente
+  AUTH -> CRED : registra tentativo fallito\n(persistito anche se l'accesso è negato)
+  note right of AUTH
+    Oltre una soglia di fallimenti consecutivi
+    l'account è bloccato per una finestra temporizzata.
+  end note
+  AUTH --> FE : identità NON verificata
+  FE --> Operatore : accesso negato
+else account bloccato
+  AUTH --> FE : identità NON verificata (bloccato)
+  FE --> Operatore : riprova più tardi
+else password corretta
+  AUTH -> CRED : azzera i contatori di fallimento
+  AUTH --> FE : identità verificata (+ token di sessione)
+  alt cambio password forzato (must_change_password)
+    note right of FE
+      Password impostata da un amministratore per un
+      altro operatore: va cambiata al primo accesso.
+    end note
+    FE --> Operatore : reindirizza al cambio password
+  else
+    FE --> Operatore : accesso consentito
+  end
+end
+
+note over FE, CRED
+  L'identità così stabilita è poi trasportata come Person/Profile
+  verso il confine di AUTORIZZAZIONE (ACL, §10): autenticazione
+  e autorizzazione restano concern distinti.
+end note
+
+@enduml

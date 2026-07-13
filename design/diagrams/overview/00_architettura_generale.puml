@@ -1,0 +1,179 @@
+@startuml 00_architettura_generale
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Architettura Generale - MissionManager
+
+skinparam backgroundColor #FAFAFA
+skinparam packageBackgroundColor #E8F4FD
+skinparam packageBorderColor #2E86AB
+skinparam componentBackgroundColor #FFFFFF
+skinparam componentBorderColor #555555
+skinparam arrowColor #333333
+
+package "Layer 5 - Frontends" {
+  [REST API JSON\n(async)] as REST
+  [Web App\n(async + realtime)] as WEBAPP
+  [CLI] as CLI
+}
+
+package "Layer 4 - Services" {
+  [MissionService] as MS
+  [AssignmentService] as ASVC
+  [ActivityService] as AS
+  [BadgeService] as BS
+  [PersonService] as PSVC
+  [PluginRegistry] as PR
+  [ExtensionRegistry] as EXTREG
+  [Extension Services\n(opzionali)] as EXTSVC
+  [ExtensionLoader] as EL
+}
+
+package "Layer 2 - Repository Interfaces e Porte" {
+  [MissionRepository] as MR
+  [MissionAssignmentRepository] as MAR
+  [ObjectiveRepository] as OR
+  [ActivityRepository] as AR
+  [BadgeRepository] as BdR
+  [BadgeAwardRepository] as BAR
+  [PersonRepository] as PRep
+  [GroupRepository] as GRep
+  [OperatorIdentityProvider] as OIP
+  [MissionHook] as MH
+  [MissionExtension] as ME
+}
+
+package "Layer 1 - Domain" {
+  [Mission · MissionAssignment] as DOMAIN1
+  [Objective · Activity] as DOMAIN2
+  [Badge · BadgeAward] as DOMAIN3
+  [Status · AssigneeType · AssignmentPolicy] as DOMAIN4
+  [Profile · AclEntry · Person · Group · Zone] as DOMAIN5
+}
+
+package "Layer 3 - Repository Adapter e Adapter Esterni" {
+  [RepositoryAdapter] as RA
+  [PersonRepositoryAdapter] as PRA
+  [GroupRepositoryAdapter] as GRA
+  [OperatorIdentityAdapter] as OIA
+  [MissionHookAdapter] as MHA
+}
+
+REST --> MS
+REST --> ASVC
+REST --> AS
+REST --> BS
+REST --> PSVC
+REST --> OIP
+WEBAPP --> MS
+WEBAPP --> ASVC
+WEBAPP --> AS
+WEBAPP --> BS
+WEBAPP --> OIP
+CLI --> MS
+CLI --> ASVC
+CLI --> AS
+CLI --> BS
+CLI --> PSVC
+CLI --> OIP
+
+REST ..> EXTREG : list() registra route
+WEBAPP ..> EXTREG : list() registra route
+CLI ..> EXTREG : list() registra comandi
+EXTREG --> EXTSVC
+EXTSVC ..> ME
+
+MS --> MR
+MS --> PR
+ASVC --> MAR
+ASVC --> MR
+ASVC --> PRep
+ASVC --> GRep
+ASVC --> AS
+ASVC --> PR
+AS --> AR
+AS --> OR
+AS --> PRep
+AS --> GRep
+AS --> PR
+BS --> BdR
+BS --> BAR
+BS --> MAR
+BS --> AR
+BS --> PRep
+BS --> PR
+PSVC --> PRep
+PSVC --> GRep
+PSVC --> PR
+
+PR --> MH
+
+RA ..|> MR
+RA ..|> MAR
+RA ..|> OR
+RA ..|> AR
+RA ..|> BdR
+RA ..|> BAR
+PRA ..|> PRep
+GRA ..|> GRep
+OIA ..|> OIP
+MHA ..|> MH
+EL ..> ME
+
+MR ..> DOMAIN1
+MAR ..> DOMAIN1
+OR ..> DOMAIN2
+AR ..> DOMAIN2
+BdR ..> DOMAIN3
+BAR ..> DOMAIN3
+PRep ..> DOMAIN5
+GRep ..> DOMAIN5
+
+MS ..> DOMAIN1
+ASVC ..> DOMAIN1
+ASVC ..> DOMAIN2
+AS ..> DOMAIN2
+BS ..> DOMAIN3
+PSVC ..> DOMAIN5
+
+note bottom of REST
+  Endpoint HTTP/JSON asincroni.
+  AuthMiddleware + ErrorHandler.
+  Gestisce blueprint, assignment,
+  attività, badge, persone e gruppi.
+end note
+
+note bottom of WEBAPP
+  Endpoint HTTP asincroni.
+  RealtimeNotifier per aggiornamenti
+  push sullo stato degli assignment
+  e delle attività.
+end note
+
+note bottom of CLI
+  Comandi interattivi da terminale.
+  mission create, assignment create,
+  activity assign, badge award,
+  person add, person group-add, person group-update.
+end note
+
+note right of RA
+  Gli adapter del Layer 3 implementano
+  i contratti del Layer 2. Il diagramma
+  non fissa tecnologie di persistenza
+  o protocolli specifici.
+end note
+
+note right of PR
+  fire(HookPoint, HookContext).
+  BEFORE_*: ctx.abort=True -> OperationAbortedError.
+  AFTER_*: eccezioni catturate e loggate.
+  Iniettato via DI (opzionale).
+end note
+
+note right of EXTREG
+  list(): restituisce ExtensionManifest.
+  I frontend leggono provides_routes e
+  provides_commands per registrare
+  route/comandi al bootstrap.
+end note
+
+@enduml

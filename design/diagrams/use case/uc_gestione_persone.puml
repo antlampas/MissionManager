@@ -1,0 +1,99 @@
+@startuml uc_gestione_persone
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Caso d'Uso — Gestione Persone e Gruppi
+left to right direction
+
+actor "Amministratore" as ADM
+actor "Sistema Plugin" as PLUG
+
+rectangle "MissionManager" {
+  usecase "Aggiungere persona" as UC_ADD
+  usecase "Modificare dati persona" as UC_UPDATE
+  usecase "Rimuovere persona" as UC_REMOVE
+  usecase "Visualizzare persona" as UC_GET
+  usecase "Elencare persone" as UC_LIST
+  usecase "Elencare persone di un gruppo" as UC_LIST_GROUP
+
+  usecase "Aggiungere gruppo" as UC_ADD_GRP
+  usecase "Rimuovere gruppo" as UC_REMOVE_GRP
+  usecase "Visualizzare gruppo" as UC_GET_GRP
+  usecase "Elencare gruppi" as UC_LIST_GRP
+
+  usecase "Eseguire hook di gestione persona" as UC_HOOK
+}
+
+ADM --> UC_ADD
+ADM --> UC_UPDATE
+ADM --> UC_REMOVE
+ADM --> UC_GET
+ADM --> UC_LIST
+ADM --> UC_LIST_GROUP
+ADM --> UC_ADD_GRP
+ADM --> UC_REMOVE_GRP
+ADM --> UC_GET_GRP
+ADM --> UC_LIST_GRP
+
+PLUG --> UC_HOOK
+
+UC_HOOK ..> UC_ADD : <<extend>>
+UC_HOOK ..> UC_UPDATE : <<extend>>
+UC_HOOK ..> UC_REMOVE : <<extend>>
+
+note right of UC_ADD
+  PersonService.add(nicknames).
+  Crea una nuova Person con almeno
+  almeno un nickname; il profilo ACL
+  nasce al minimo privilegio
+  (almeno uno tra level e group).
+  REST: POST /persons
+  CLI: person add --nickname ...
+end note
+
+note right of UC_UPDATE
+  PersonService.update(id, nicknames?).
+  Aggiorna parzialmente i dati di una
+  Person esistente: modifica nicknames
+  Payload parziale; il profilo ACL si
+  assegna con set_acl_profile (MANAGE_PROFILES).
+  REST: PUT /persons/<id>
+  CLI: person update <id> [--nickname ...]
+  CLI: person set-acl <id> --acl-level ... [--acl-group ...]
+end note
+
+note right of UC_REMOVE
+  PersonService.remove(id).
+  Rimuove la Person dal dominio.
+  REST: DELETE /persons/<id>
+  CLI: person remove <id>
+end note
+
+note right of UC_LIST_GROUP
+  PersonService.list_by_group(group_id).
+  Restituisce tutte le Person associate
+  al Group specificato tramite
+  PersonRepository.get_by_group().
+  REST: GET /groups/<id>/members
+  CLI: person list-by-group <group_id>
+end note
+
+note right of UC_ADD_GRP
+  PersonService.add_group(name?).
+  Crea un nuovo Group nel dominio.
+  REST: POST /groups, PUT /groups/{id}
+  CLI: person group-add [--name ...], person group-update <id>
+end note
+
+note right of UC_REMOVE_GRP
+  PersonService.remove_group(group_id).
+  Rimuove un Group dal dominio.
+  REST: DELETE /groups/<id>
+  CLI: person group-remove <id>
+end note
+
+note right of UC_HOOK
+  Condizionale: solo se PluginRegistry è presente.
+  Copre BEFORE_*/AFTER_* per le operazioni
+  di creazione, modifica e rimozione persona.
+end note
+
+@enduml

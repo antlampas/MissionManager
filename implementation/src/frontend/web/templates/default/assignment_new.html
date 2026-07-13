@@ -1,0 +1,101 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Nuova assegnazione — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_assignments') }}">Assegnazioni</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">Nuova</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">Nuova assegnazione</h1>
+  <p class="page-header__meta">
+    Crea un'esecuzione (MissionAssignment) con la propria copia di obiettivi e attività.
+  </p>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+{% set preselected = request.args.get('mission') %}
+
+<div class="card">
+  {% if missions %}
+    <form data-form="assignment-create"
+          data-endpoint="{{ url_for('mission_web.create_assignment') }}">
+      <div class="form-group">
+        <label class="form-label form-label--required" for="mission_id">Missione</label>
+        <select class="form-control" id="mission_id" data-mission-id>
+          <option value="">— Seleziona missione —</option>
+          {% for m in missions %}
+            <option value="{{ m.id }}" {% if m.id == preselected %}selected{% endif %}>
+              {{ m.title }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="assignee_type">Tipo di assegnatario</label>
+        <select class="form-control" id="assignee_type" data-assignee-type>
+          <option value="">— Non assegnato —</option>
+          <option value="PERSON">Persona</option>
+          <option value="GROUP">Gruppo</option>
+        </select>
+        <p class="form-hint">
+          Lascia «Non assegnato» per creare un'assegnazione ancora senza assegnatario.
+        </p>
+      </div>
+
+      <div class="form-group" data-assignee-field="PERSON" hidden>
+        <label class="form-label" for="assignee_person">Persona</label>
+        <select class="form-control" id="assignee_person" data-assignee-id="PERSON">
+          <option value="">— Seleziona —</option>
+          {% for p in persons %}
+            <option value="{{ p.id }}">{{ p.primary_nickname }} ({{ p.id[:8] }}…)</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group" data-assignee-field="GROUP" hidden>
+        <label class="form-label" for="assignee_group">Gruppo</label>
+        <select class="form-control" id="assignee_group" data-assignee-id="GROUP">
+          <option value="">— Seleziona —</option>
+          {% for grp in groups %}
+            <option value="{{ grp.id }}">Gruppo {{ grp.id[:8] }}…</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" class="btn btn-primary" data-submit>Crea assegnazione</button>
+    </form>
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state__icon" aria-hidden="true">📋</div>
+      <h2 class="empty-state__title">Nessuna missione</h2>
+      <p class="empty-state__desc">
+        Crea prima una missione (blueprint) da poter assegnare.
+      </p>
+      <div style="margin-top:1rem;">
+        <a href="{{ url_for('mission_web.new_mission_form') }}" class="btn btn-primary">
+          ＋ Nuova missione
+        </a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<div style="margin-top:.5rem;">
+  <a href="{{ url_for('mission_web.list_assignments') }}" class="btn btn-secondary">
+    ← Torna alle assegnazioni
+  </a>
+</div>
+
+{% endblock %}

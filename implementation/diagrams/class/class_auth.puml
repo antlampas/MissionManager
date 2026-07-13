@@ -1,0 +1,133 @@
+@startuml class_auth
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Implementazione - Sottosistema di autenticazione (application + infrastructure/auth)
+
+skinparam classAttributeIconSize 0
+skinparam defaultTextAlignment left
+
+skinparam interface {
+  BackgroundColor #E8F4FD
+  BorderColor     #2980B9
+  FontColor       #1A5276
+}
+skinparam class {
+  BackgroundColor<<dataclass>>    #EDFAF1
+  BorderColor<<dataclass>>        #82E0AA
+  FontColor<<dataclass>>          #145A32
+}
+skinparam ArrowColor #2980B9
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+
+note as INTRO
+  L'autenticazione (chi sei) è distinta dall'autorizzazione ACL
+  (cosa puoi fare, class_acl.puml). AuthService orchestra due
+  backend mutuamente esclusivi: locale (password + JWT HS256)
+  oppure OIDC (Authorization Code + PKCE, identità delegata all'IdP).
+end note
+
+package "application/services" {
+  class AuthService {
+    -_person_repo: PersonRepository
+    -_local_auth: LocalAuthAdapter?
+    -_oidc_client: OidcAuthClient?
+    -_uow
+    --
+    +login_local(username, password) (Person, token)
+    +set_password(person_id, password, must_change=False)
+    +password_change_required(person_id) bool
+    +logout_local(token)
+    +begin_oidc_flow(redirect_uri) dict
+    +complete_oidc_flow(code, state, nonce, verifier) (Person, TokenSet)
+    +admin_exists(person_service) bool
+    +create_initial_admin(person_service, nickname, password) Person
+  }
+  note right of AuthService
+    login_local NON è @transactional: l'adapter apre
+    transazioni proprie, così il conteggio dei tentativi
+    falliti persiste anche quando il login solleva
+    (un rollback del caso d'uso lo annullerebbe).
+  end note
+}
+
+package "domain/auth.py (porta)" {
+  interface CredentialRepository <<Protocol>> {
+    +get(person_id) Optional[LocalCredential]
+    +save(credential) None
+    +delete(person_id) bool
+  }
+  class LocalCredential <<dataclass>> {
+    +person_id: UUID
+    +hashed_password: str
+    +failed_attempts: int = 0
+    +locked_until: Optional[datetime]
+    +must_change_password: bool = False
+  }
+}
+
+package "infrastructure/auth" {
+  class LocalAuthAdapter {
+    -_secret: str
+    -_cred_repo: CredentialRepository
+    -_policy: PasswordPolicy
+    -_max_failed_attempts: int
+    -_lockout_seconds: int
+    -_dummy_hash: str
+    -_uow
+    --
+    +authenticate(username, password) (Person, token)
+    +set_password(person_id, password, must_change)
+    +password_change_required(person_id) bool
+    +issue_token(person) str
+    +verify_token(token) UUID
+    +revoke_token(token)
+    +unlock(person_id)
+    -_register_failure(person_id)   ' transazione propria
+  }
+  class PasswordPolicy <<dataclass>> {
+    +min_length: int = 8
+    +require_uppercase: bool = False
+    +require_digit: bool = False
+    +require_special: bool = False
+    --
+    +validate(password)   ' + tetto 72 byte bcrypt
+  }
+  class OidcAuthClient {
+    -_issuer: str
+    -_client_id: str
+    -_verify: bool | str      ' TLS: True | False | CA bundle
+    --
+    +build_auth_url(redirect, state, nonce, verifier) str
+    +exchange_code(code, redirect, verifier) OidcTokenSet
+    +validate_id_token(id_token, nonce) dict   ' leeway=30s
+    +validate_access_token(token, iss?, aud?) dict
+  }
+}
+
+package "infrastructure/repositories" {
+  class SqlAlchemyCredentialRepository {
+    tabella mm_credentials
+    ' changed_at solo se l'hash cambia
+  }
+}
+
+AuthService --> LocalAuthAdapter : backend locale
+AuthService --> OidcAuthClient : backend OIDC
+AuthService --> PersonRepository
+LocalAuthAdapter --> CredentialRepository
+LocalAuthAdapter --> PasswordPolicy
+LocalAuthAdapter ..> LocalCredential : legge / scrive
+SqlAlchemyCredentialRepository ..|> CredentialRepository
+CredentialRepository ..> LocalCredential
+
+note bottom of LocalAuthAdapter
+  Quattro proprietà di sicurezza (DESIGN §9.4):
+  1. verifica a tempo costante (bcrypt sul dummy se
+     nickname/credenziali assenti) → anti user-enumeration
+  2. password policy (PasswordPolicy, in set_password)
+  3. account lockout (failed_attempts / locked_until;
+     _register_failure committa in transazione propria)
+  4. must_change_password (cambio forzato al primo accesso)
+end note
+
+@enduml

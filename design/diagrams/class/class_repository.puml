@@ -1,0 +1,136 @@
+@startuml class_repository
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Repository Interfaces, Porte e Adapter
+
+interface BaseRepository<T> {
+  +get(id: UUID): T
+  +list(filters: dict): List[T]
+  +save(entity: T): T
+  +delete(id: UUID): bool
+  +exists(id: UUID): bool
+}
+
+' -- Layer 2: contratti -------------------------------------------------
+interface MissionRepository {
+  +get_by_title(title: str): Optional[Mission]
+}
+
+interface MissionAssignmentRepository {
+  +get_by_mission(mission_id: UUID): List[MissionAssignment]
+  +get_by_assignee(assignee_id: UUID): List[MissionAssignment]
+  +get_by_status(status: Status): List[MissionAssignment]
+  +count_by_mission(mission_id: UUID): int
+  +count_active_by_mission(mission_id: UUID): int
+}
+
+interface ObjectiveRepository {
+  +get_by_assignment(assignment_id: UUID): List[Objective]
+}
+
+interface ActivityRepository {
+  +get_by_objective(objective_id: UUID): List[Activity]
+  +get_by_person(person_id: UUID): List[Activity]
+}
+
+interface BadgeRepository {
+}
+
+interface BadgeAwardRepository {
+  +get_by_person(person_id: UUID): List[BadgeAward]
+  +get_by_assignment(assignment_id: UUID): Optional[BadgeAward]
+  +get_by_activity(activity_id: UUID): Optional[BadgeAward]
+  +exists_for_target(target_type: str, target_id: UUID): bool
+}
+
+interface PersonRepository {
+  +get_by_group(group_id: UUID): List[Person]
+}
+
+interface GroupRepository {
+  +add_member(group_id: UUID, person_id: UUID): void
+  +remove_member(group_id: UUID, person_id: UUID): void
+}
+
+interface OperatorIdentityProvider {
+  +get_current_operator() Person
+}
+
+' -- Layer 3: adapter astratti ------------------------------------------
+abstract class RepositoryAdapter<T> {
+  +get(id: UUID): T
+  +list(filters: dict): List[T]
+  +save(entity: T): T
+  +delete(id: UUID): bool
+  +exists(id: UUID): bool
+}
+
+abstract class MissionRepositoryAdapter
+abstract class MissionAssignmentRepositoryAdapter
+abstract class ObjectiveRepositoryAdapter
+abstract class ActivityRepositoryAdapter
+abstract class BadgeRepositoryAdapter
+abstract class BadgeAwardRepositoryAdapter
+abstract class PersonRepositoryAdapter
+abstract class GroupRepositoryAdapter
+abstract class OperatorIdentityAdapter
+
+' -- Relazioni ----------------------------------------------------------
+MissionRepository --|> BaseRepository
+MissionAssignmentRepository --|> BaseRepository
+ObjectiveRepository --|> BaseRepository
+ActivityRepository --|> BaseRepository
+BadgeRepository --|> BaseRepository
+BadgeAwardRepository --|> BaseRepository
+PersonRepository --|> BaseRepository
+GroupRepository --|> BaseRepository
+
+MissionRepositoryAdapter --|> RepositoryAdapter
+MissionAssignmentRepositoryAdapter --|> RepositoryAdapter
+ObjectiveRepositoryAdapter --|> RepositoryAdapter
+ActivityRepositoryAdapter --|> RepositoryAdapter
+BadgeRepositoryAdapter --|> RepositoryAdapter
+BadgeAwardRepositoryAdapter --|> RepositoryAdapter
+PersonRepositoryAdapter --|> RepositoryAdapter
+GroupRepositoryAdapter --|> RepositoryAdapter
+
+MissionRepositoryAdapter ..|> MissionRepository
+MissionAssignmentRepositoryAdapter ..|> MissionAssignmentRepository
+ObjectiveRepositoryAdapter ..|> ObjectiveRepository
+ActivityRepositoryAdapter ..|> ActivityRepository
+BadgeRepositoryAdapter ..|> BadgeRepository
+BadgeAwardRepositoryAdapter ..|> BadgeAwardRepository
+PersonRepositoryAdapter ..|> PersonRepository
+GroupRepositoryAdapter ..|> GroupRepository
+OperatorIdentityAdapter ..|> OperatorIdentityProvider
+
+note right of PersonRepository
+  Contratto di persistenza per Person.
+  get_by_group() risolve i membri di un
+  Group restituendo le Person associate.
+  Usato da AssignmentService, ActivityService,
+  BadgeService e PersonService.
+end note
+
+note right of GroupRepository
+  Contratto di persistenza per Group.
+  Usato da AssignmentService per verificare
+  l'esistenza di un gruppo (exists()) prima
+  di creare un assignment, e da PersonService
+  per gestire la membership dei Group.
+end note
+
+note right of OperatorIdentityProvider
+  Porta distinta da PersonRepository:
+  stabilisce chi sta effettuando
+  la richiesta corrente. Ogni frontend
+  puo' avere il proprio adapter.
+end note
+
+note bottom of RepositoryAdapter
+  Gli adapter del Layer 3 realizzano
+  i contratti del Layer 2. Il diagramma
+  non specifica tecnologie, database,
+  protocolli o nomi di classi concrete.
+end note
+
+@enduml

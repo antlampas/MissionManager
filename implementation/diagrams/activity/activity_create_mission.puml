@@ -1,0 +1,103 @@
+@startuml activity_create_mission
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title MissionService.create() — Creazione Blueprint Missione
+
+skinparam ActivityBorderColor #784212
+skinparam ActivityBackgroundColor #FEF6EC
+skinparam ActivityFontColor #784212
+skinparam ArrowColor #784212
+skinparam PartitionBorderColor #784212
+skinparam PartitionBackgroundColor #FEF6EC
+skinparam NoteBackgroundColor #FEF9E7
+skinparam NoteBorderColor #F0B27A
+skinparam defaultTextAlignment left
+
+start
+
+:Frontend chiama **MissionService.create**(title, desc, objectives_data);
+
+note right
+  objectives_data è una lista di dict con
+  description + activities[{title, description}].
+  Il frontend è già stato autenticato e autorizzato
+  dal middleware prima di questa chiamata.
+end note
+
+partition "Validazione" {
+  if (title vuoto?) then (sì)
+    :lancia **ValidationError**("title è obbligatorio");
+    stop
+  endif
+  if (len(objectives_data) == 0?) then (sì)
+    :lancia **ValidationError**("almeno un obiettivo richiesto");
+    stop
+  endif
+  :Per ogni objective_data in objectives_data:;
+  if (len(objective_data.activities) == 0?) then (sì)
+    :lancia **ValidationError**\n("ogni obiettivo richiede almeno un'attività");
+    stop
+  endif
+}
+
+partition "Plugin BEFORE_CREATE_MISSION" {
+  :Costruisce **HookContext**(BEFORE_CREATE_MISSION,\n  payload={title, desc, objectives_data});
+  :plugin_registry.**fire**(BEFORE_CREATE_MISSION, ctx)\n[se plugin_registry presente];
+  if (ctx.abort == True?) then (sì)
+    :lancia **OperationAbortedError**(ctx.abort_reason);
+    stop
+  endif
+}
+
+partition "Costruzione entità" {
+  :mission_id = uuid4()\nmission = **Mission**(id=mission_id, title, desc,\n  assignment_policy=AssignmentPolicy.unlimited());
+  note right
+    AssignmentPolicy.unlimited() è il default:
+    max_total=None, max_concurrent=None.
+    La policy è impostata al momento della creazione
+    e non può essere modificata dopo.
+  end note
+  :Per ogni objective_data:\n  obj = **Objective**(id=uuid4(), description=..., activities=[])\n  Per ogni activity_data:\n    act = **Activity**(id=uuid4(), title=..., status=UNASSIGNED)\n    obj.activities.append(act)\n  mission.objectives.append(obj);
+  :mission.**validate**();
+  note right
+    validate() ricontrolla invarianti sull'entità
+    costruita: almeno un obiettivo, almeno
+    un'attività per obiettivo, title non vuoto.
+    Failsafe contro bug di costruzione.
+  end note
+}
+
+partition "Persistenza" {
+  :mission_repo.**save**(mission)\n(con tutti gli Objective e Activity annidati);
+  note right
+    L'adapter concrete salva la struttura annidata
+    atomicamente (transazione per SQL,
+    sequenza atomica per altri backend).
+    Se una sotto-entità fallisce, l'intera
+    operazione viene annullata.
+  end note
+}
+
+partition "Plugin AFTER_CREATE_MISSION" {
+  :ctx.result = mission;
+  :plugin_registry.**fire**(AFTER_CREATE_MISSION, ctx)\n[se plugin_registry presente];
+  note right
+    La Mission è già persistita.
+    Hook AFTER_*: eccezioni catturate e loggate,
+    mai propagate. Side effect (es. notifiche,
+    sincronizzazione sistemi esterni).
+  end note
+}
+
+:Converti in **MissionDTO**\n(con ObjectiveDTO e ActivityDTO annidati);
+
+note right
+  La Mission è ora un blueprint privo di stato attivo.
+  Il ciclo di vita inizia con la creazione di un
+  MissionAssignment tramite AssignmentService.create().
+end note
+
+:Restituisce **MissionDTO** al Frontend;
+
+stop
+
+@enduml

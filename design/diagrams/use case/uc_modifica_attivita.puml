@@ -1,0 +1,63 @@
+@startuml uc_modifica_attivita
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Caso d'Uso — Modifica di un'attività (aggiornamento stato)
+left to right direction
+
+actor "Gestore Missioni" as GM
+actor "Sistema" as SYS
+
+rectangle "MissionManager" {
+  usecase "Aggiornare stato attività" as UC_STATUS
+  usecase "Verificare transizione di stato ammessa" as UC_TRANS
+  usecase "Propagare IN_PROGRESS/FAILED al MissionAssignment padre" as UC_CASCADE
+  usecase "Calcolare esito derivato dell'Objective" as UC_OUTCOME
+}
+
+GM --> UC_STATUS
+SYS --> UC_CASCADE
+SYS --> UC_OUTCOME
+
+UC_STATUS ..> UC_TRANS : <<include>>
+UC_CASCADE ..> UC_STATUS : <<extend>>
+UC_OUTCOME ..> UC_STATUS : <<extend>>
+
+note right of UC_STATUS
+  ActivityService.update_status(activity_id, status).
+  Avanza lo stato rispettando la macchina a stati
+  definita in Status._TRANSITIONS.
+  Solleva StatusTransitionError se la transizione
+  non è ammessa.
+  Restituisce ActivityDTO aggiornato.
+end note
+
+note right of UC_TRANS
+  Status.can_transition_to(new_status).
+  Transizioni ammesse per Activity:
+    UNASSIGNED → ASSIGNED
+    ASSIGNED → IN_PROGRESS, FAILED
+    IN_PROGRESS → COMPLETED, FAILED
+  COMPLETED e FAILED sono stati terminali:
+  nessuna ulteriore transizione.
+end note
+
+note right of UC_CASCADE
+  Estensione condizionale (automatica):
+  - se la Activity passa a IN_PROGRESS e il
+    MissionAssignment padre è in stato ASSIGNED,
+    porta automaticamente il padre a IN_PROGRESS;
+  - se la Activity passa a FAILED e il padre non è
+    ancora terminale, porta automaticamente il
+    padre a FAILED.
+  Avviene senza intervento del Gestore.
+end note
+
+note right of UC_OUTCOME
+  Estensione condizionale (automatica):
+  attiva quando tutte le Activity dell'Objective
+  hanno raggiunto uno stato terminale.
+  Objective.compute_outcome() aggrega gli esiti:
+    tutte COMPLETED → esito positivo;
+    almeno una FAILED → esito negativo.
+end note
+
+@enduml

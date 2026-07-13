@@ -1,0 +1,54 @@
+@startuml seq_acl_enforcement
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma di Sequenza - Enforcement ACL al confine (Web App)
+
+actor Operatore
+participant "ACLMiddleware" as MW
+participant "OperatorIdentityProvider" as IDP
+participant "AuthorizationPolicy" as POLICY
+participant "ProfileProvider" as PROF
+participant "AclEntryRepository" as REPO
+participant "ResourceHierarchyProvider" as HIER
+participant "Handler / Service" as HANDLER
+
+Operatore -> MW : PUT /activities/<id>/status
+MW -> IDP : get_current_operator()
+alt sessione autenticata
+  IDP --> MW : Person
+else non autenticato
+  IDP --> MW : AuthenticationError
+  note right of MW
+    Nessun errore immediato: si prosegue
+    con il principale anonimo (D5)
+  end note
+end
+
+MW -> MW : endpoint → (UPDATE_STATUS,\nACTIVITY:<id>)
+MW -> POLICY : is_allowed(principal, UPDATE_STATUS, ACTIVITY:<id>)
+POLICY -> PROF : profile_of(principal)
+PROF --> POLICY : Profile (o anonimo)
+POLICY -> REPO : list_for(ACTIVITY:<id>, UPDATE_STATUS)
+REPO --> POLICY : [] (nessuna entry propria)
+POLICY -> HIER : parents_of(ACTIVITY:<id>)
+HIER --> POLICY : [OBJECTIVE:<oid>]
+note right of POLICY
+  Ricorsione lungo la catena
+  OBJECTIVE → ASSIGNMENT → MISSION →
+  MISSION:* dove vivono le soglie
+  di default del bootstrap
+end note
+POLICY -> REPO : list_for(MISSION:*, UPDATE_STATUS)
+REPO --> POLICY : [ALLOW level<=50 (PUBLIC)]
+POLICY -> POLICY : match + precedenza\n(DENY > ALLOW > default-deny)
+POLICY --> MW : True / False
+
+alt ALLOWED
+  MW -> HANDLER : prosegui con la richiesta
+  HANDLER --> Operatore : 200 OK
+else DENIED, autenticato
+  MW --> Operatore : 403 JSON
+else DENIED, anonimo
+  MW --> Operatore : redirect /login (pagine)\n401 (mutazioni)
+end
+
+@enduml

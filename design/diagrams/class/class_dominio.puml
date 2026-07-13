@@ -1,0 +1,253 @@
+@startuml class_dominio
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Diagramma delle Classi - Dominio
+
+' ── Enumerazioni ──────────────────────────────────────────
+enum ZoneType {
+  GEOGRAPHIC
+  VIRTUAL
+}
+
+enum Status {
+  UNASSIGNED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  --
+  +is_terminal() bool
+  +can_transition_to(s: Status) bool
+}
+
+enum AssigneeType {
+  PERSON
+  GROUP
+}
+
+' ── Entità del dominio MissionManager ─────────────────────
+class Badge {
+  +id: UUID
+  +name: str
+  +description: str
+  +image_url: Optional[str]
+}
+
+class BadgeAward {
+  +id: UUID
+  +badge_id: UUID
+  +target_type: str
+  +target_id: UUID
+  +recipients: List[UUID]
+  +awarded_at: datetime
+}
+
+class Activity {
+  +id: UUID
+  +title: str
+  +description: str
+  +status: Status
+  +assignees: List[UUID]
+  +badge_award: Optional[BadgeAward]
+  --
+  +update_status(s: Status)
+  +validate()
+}
+
+note right of Activity
+  assignees contiene UUID di Person
+  del dominio.
+  ActivityService.assign_to() aggiunge un
+  assegnatario e, se l'Activity era UNASSIGNED,
+  la porta automaticamente ad ASSIGNED.
+  Deve avere almeno un assegnatario
+  prima di passare a IN_PROGRESS.
+  Gli assegnatari devono appartenere
+  al gruppo dell'assignment (oppure
+  essere la persona diretta se
+  AssigneeType == PERSON).
+end note
+
+class Objective {
+  +id: UUID
+  +description: str
+  +activities: List[Activity]
+  --
+  +compute_outcome() Optional[str]
+  +validate()
+}
+
+note right of Objective
+  Le attività sono definite contestualmente
+  alla costruzione dell'Objective (creazione
+  della missione o di un MissionAssignment),
+  non con un'operazione autonoma post-creazione.
+  compute_outcome() deriva l'esito dagli stati
+  terminali delle attività; l'Objective non ha
+  uno stato proprio.
+end note
+
+class AssignmentPolicy <<value object>> {
+  +max_total: Optional[int]
+  +max_concurrent: Optional[int]
+  --
+  +validate()
+  {static} +unlimited() AssignmentPolicy
+  {static} +once() AssignmentPolicy
+  {static} +once_active() AssignmentPolicy
+}
+
+note right of AssignmentPolicy
+  Controlla se e quante volte una Mission
+  può ricevere nuovi MissionAssignment.
+  max_total: limite sul totale storico
+    di assignment (qualsiasi stato,
+    inclusi terminali); None = illimitato.
+  max_concurrent: limite sugli assignment
+    operativi (ASSIGNED, IN_PROGRESS)
+    attivi contemporaneamente; UNASSIGNED
+    è una bozza; None = illimitato.
+  validate(): se entrambi impostati,
+    richiede max_total >= max_concurrent.
+  Default su Mission: unlimited().
+end note
+
+class Mission {
+  +id: UUID
+  +title: str
+  +description: str
+  +objectives: List[Objective]
+  +assignment_policy: AssignmentPolicy
+  --
+  +validate()
+}
+
+note right of Mission
+  Template strutturale: definisce
+  titolo, descrizione e il blueprint
+  degli obiettivi con le relative attività.
+  Non ha stato né esito propri.
+  Immutabile dopo la creazione: obiettivi e
+  attività si definiscono solo alla costruzione;
+  nessun metodo per aggiungerli/modificarli dopo.
+  Per ogni assegnazione viene creato
+  un MissionAssignment con la propria
+  copia istanziata degli obiettivi
+  e delle attività.
+  assignment_policy vincola il numero
+  di MissionAssignment creabili;
+  default: AssignmentPolicy.unlimited().
+end note
+
+class MissionAssignment {
+  +id: UUID
+  +mission_id: UUID
+  +assignee_type: Optional[AssigneeType]
+  +assignee_id: Optional[UUID]
+  +status: Status
+  +objectives: List[Objective]
+  +badge_award: Optional[BadgeAward]
+  --
+  +assign_to(t: AssigneeType, id: UUID)
+  +update_status(s: Status)
+  +award_badge(a: BadgeAward)
+  +is_completed() bool
+  +compute_outcome() Optional[str]
+  +validate()
+}
+
+note right of MissionAssignment
+  Entità vivente: nasce quando una
+  Mission viene assegnata a una
+  Person o a un Group.
+  Porta la propria copia istanziata
+  di obiettivi e attività, indipendente
+  dagli altri MissionAssignment della
+  stessa Mission.
+  Lo stato segue la macchina a stati
+  di Status. L'esito è derivato dai
+  propri obiettivi → attività.
+  Nasce in stato UNASSIGNED se creata
+  senza assegnatario; passa a ASSIGNED
+  tramite assign_to() quando viene
+  assegnata a una Person o a un Group,
+  indipendentemente dallo stato delle
+  attivita'. Passa a IN_PROGRESS quando
+  almeno una Activity interna raggiunge
+  lo stato IN_PROGRESS (transizione
+  automatica in ActivityService.update_status()).
+  Il BadgeAward si crea solo quando
+  status == COMPLETED; viene propagato
+  alle persone di questo assignment.
+end note
+
+' ── Persone, Gruppi e Zone ────────────────────────────────
+class Person {
+  +id: UUID
+  +nicknames: List[str]
+  +acl: Profile
+  --
+  +primary_nickname() str
+}
+
+class Group {
+  +id: UUID
+}
+
+class Zone {
+  +id: UUID
+  +name: str
+  +type: ZoneType
+  +description: Optional[str]
+}
+
+class Profile <<value object>> {
+  +level: int
+  +groups: FrozenSet[str]
+  --
+  {static} +anonymous() Profile
+  +stored_groups() List[str]
+}
+
+note bottom of Person
+  Operatore del dominio.
+  nicknames: lista di alias per la
+  visualizzazione; primary_nickname()
+  restituisce il primo elemento.
+  acl è il Profile valutato dalle
+  AclEntry (vedi class_acl_authorization);
+  l'entità lo trasporta ma non esegue
+  mai controlli di autorizzazione.
+end note
+
+note bottom of Group
+  Raggruppa persone per assegnazione
+  collettiva di missioni.
+  I membri vengono risolti tramite
+  PersonRepository.get_by_group()
+  al momento del bisogno.
+end note
+
+note bottom of Profile
+  Livello: più basso = più privilegiato
+  (convenzione D3/D8); default =
+  sentinella anonima. groups include
+  sempre il gruppo universale "public".
+end note
+
+' ── Relazioni ─────────────────────────────────────────────
+Mission --> AssignmentPolicy
+Mission "1" *-- "1..*" Objective : blueprint
+MissionAssignment "1" *-- "1..*" Objective : istanze live
+Objective "1" *-- "1..*" Activity : attività
+BadgeAward --> Badge : definizione
+Activity "0..1" --> "0..1" BadgeAward
+MissionAssignment "0..1" --> "0..1" BadgeAward
+MissionAssignment --> Mission : si basa su
+MissionAssignment --> Status : ha stato
+MissionAssignment --> AssigneeType : tipo assegnatario
+Activity --> Status : ha stato
+Person "1" *-- "1" Profile : profilo ACL
+Group "0..1" --> "0..1" Zone
+Zone --> ZoneType
+
+@enduml

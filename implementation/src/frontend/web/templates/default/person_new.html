@@ -1,0 +1,47 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Nuova persona — Mission Manager{% endblock %}
+
+{% block content %}
+
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('mission_web.list_persons') }}">Persone</a>
+  <span class="breadcrumb__sep" aria-hidden="true">/</span>
+  <span class="breadcrumb__current">Nuova persona</span>
+</nav>
+
+<div class="page-header">
+  <h1 class="page-header__title">Nuova persona</h1>
+  <p class="page-header__meta">
+    Indica almeno un nickname. La persona nasce con il profilo ACL meno
+    privilegiato: livello e gruppi si assegnano dalla pagina «ACL».
+  </p>
+</div>
+
+<div class="alert alert-error" role="alert" data-form-error hidden>
+  <span class="alert__icon" aria-hidden="true">✕</span>
+  <span data-form-error-text></span>
+</div>
+
+<form data-form="person-create"
+      data-endpoint="{{ url_for('mission_web.create_person') }}"
+      data-redirect="{{ url_for('mission_web.list_persons') }}">
+  <div class="card">
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label form-label--required" for="nicknames">Nickname</label>
+      <textarea class="form-control" id="nicknames" rows="2"
+                data-json="nicknames" data-json-type="list"
+                placeholder="Uno per riga, oppure separati da virgola"></textarea>
+      <p class="form-hint">Il primo nickname è quello principale.</p>
+    </div>
+  </div>
+
+  <div class="page-header__actions">
+    <button type="submit" class="btn btn-primary btn-lg" data-submit>Crea persona</button>
+    <a href="{{ url_for('mission_web.list_persons') }}" class="btn btn-secondary">Annulla</a>
+  </div>
+</form>
+
+{% endblock %}

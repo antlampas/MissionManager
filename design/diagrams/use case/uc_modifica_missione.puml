@@ -1,0 +1,36 @@
+@startuml uc_modifica_missione
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Caso d'Uso — Operazioni su una missione esistente (blueprint)
+left to right direction
+
+actor "Gestore Missioni" as GM
+
+rectangle "MissionManager" {
+  usecase "Consultare il blueprint" as UC_VIEW
+  usecase "Eliminare missione" as UC_DELETE
+}
+
+GM --> UC_VIEW
+GM --> UC_DELETE
+
+note right of UC_VIEW
+  Il blueprint è IMMUTABILE dopo la creazione.
+  Obiettivi e attività si definiscono solo
+  al momento della creazione (caso d'uso
+  "Crea missione") e non possono più essere
+  aggiunti né modificati: non esiste alcuna
+  operazione di add_objective o di modifica
+  strutturale. Le sole operazioni successive
+  sul blueprint sono la consultazione e
+  l'eliminazione. Né title/description né
+  obiettivi/attività sono modificabili.
+end note
+
+note right of UC_DELETE
+  MissionService.delete(mission_id).
+  Elimina il blueprint dalla persistenza.
+  I MissionAssignment già creati da questo blueprint
+  rimangono indipendenti e non vengono eliminati.
+end note
+
+@enduml

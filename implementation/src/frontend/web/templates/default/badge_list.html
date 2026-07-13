@@ -1,0 +1,58 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
+
+{% extends "layout.html" %}
+
+{% block title %}Badge — Mission Manager{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <h1 class="page-header__title">Badge</h1>
+  <p class="page-header__meta">Catalogo dei riconoscimenti assegnabili</p>
+  <div class="page-header__actions">
+    <a href="{{ url_for('mission_web.new_badge_form') }}" class="btn btn-primary">
+      ＋ Nuovo badge
+    </a>
+  </div>
+</div>
+
+{% if badges %}
+  <div class="mission-grid">
+    {% for b in badges %}
+    <article class="mission-card">
+      <header class="d-flex align-center gap-2">
+        {% if b.image_url %}
+          <img src="{{ b.image_url }}" alt="" width="32" height="32"
+               style="border-radius:6px;object-fit:cover;">
+        {% else %}
+          <span class="app-header__brand-icon" aria-hidden="true">🏅</span>
+        {% endif %}
+        <h2 class="mission-card__title">
+          <a href="{{ url_for('mission_web.get_badge', id=b.id) }}">{{ b.name }}</a>
+        </h2>
+      </header>
+      {% if b.description %}
+        <p class="mission-card__desc">{{ b.description }}</p>
+      {% endif %}
+      <footer class="mission-card__footer">
+        <span class="id-chip">{{ b.id[:8] }}…</span>
+        <a href="{{ url_for('mission_web.get_badge', id=b.id) }}"
+           class="btn btn-secondary btn-sm">Dettaglio →</a>
+      </footer>
+    </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty-state">
+    <div class="empty-state__icon" aria-hidden="true">🏅</div>
+    <h2 class="empty-state__title">Nessun badge</h2>
+    <p class="empty-state__desc">Non ci sono ancora badge nel catalogo.</p>
+    <div style="margin-top:1rem;">
+      <a href="{{ url_for('mission_web.new_badge_form') }}" class="btn btn-primary">
+        ＋ Crea il primo badge
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

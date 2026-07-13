@@ -1,0 +1,85 @@
+@startuml uc_assegna_missione
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Caso d'Uso — Assegnazione di una missione
+left to right direction
+
+actor "Gestore Missioni" as GM
+
+actor "Sistema Plugin" as PLUG
+
+rectangle "MissionManager" {
+  usecase "Creare MissionAssignment\n(con assegnatario)" as UC_CREATE
+  usecase "Creare MissionAssignment\nsenza assegnatario" as UC_UNASSIGNED
+  usecase "Impostare assegnatario su\nMissionAssignment non assegnato" as UC_ASSIGN
+  usecase "Verificare limiti AssignmentPolicy" as UC_POLICY
+  usecase "Validare assegnatario" as UC_VALID
+  usecase "Replicare blueprint nel\nMissionAssignment" as UC_REPLICATE
+  usecase "Eseguire hook di creazione assignment" as UC_HOOK
+}
+
+GM --> UC_CREATE
+GM --> UC_UNASSIGNED
+GM --> UC_ASSIGN
+
+
+PLUG --> UC_HOOK
+
+UC_CREATE ..> UC_POLICY : <<include>>
+UC_CREATE ..> UC_VALID : <<include>>
+UC_CREATE ..> UC_REPLICATE : <<include>>
+UC_UNASSIGNED ..> UC_POLICY : <<include>>
+UC_UNASSIGNED ..> UC_REPLICATE : <<include>>
+UC_ASSIGN ..> UC_VALID : <<include>>
+UC_HOOK ..> UC_CREATE : <<extend>>
+UC_HOOK ..> UC_UNASSIGNED : <<extend>>
+
+note right of UC_CREATE
+  AssignmentService.create(mission_id,
+    assignee_type, assignee_id).
+  assignee_type: PERSON o GROUP.
+  Crea MissionAssignment con stato ASSIGNED.
+  Per GROUP: le attività sono assegnabili
+  ai membri del gruppo tramite assign_to().
+end note
+
+note right of UC_UNASSIGNED
+  AssignmentService.create(mission_id,
+    assignee_type=None, assignee_id=None).
+  Crea MissionAssignment con stato UNASSIGNED,
+  senza assegnatario iniziale.
+  L'assegnatario sarà impostato in seguito
+  tramite AssignmentService.assign().
+end note
+
+note right of UC_ASSIGN
+  AssignmentService.assign(assignment_id,
+    assignee_type, assignee_id).
+  Valido solo su MissionAssignment in stato UNASSIGNED.
+  Porta l'assignment ad ASSIGNED dopo la validazione
+  dell'assegnatario tramite PersonRepository / GroupRepository.
+end note
+
+note right of UC_POLICY
+  Verifica AssignmentPolicy della missione:
+    max_total: count_by_mission() >= max_total
+               → ValidationError.
+    max_concurrent: count_active_by_mission()
+               >= max_concurrent → ValidationError.
+  Controllo applicato prima di qualsiasi altra
+  operazione (inclusi gli hook BEFORE_*).
+end note
+
+note right of UC_REPLICATE
+  Copia strutturale dal blueprint:
+  ogni Objective e Activity ottiene un nuovo UUID
+  e vive indipendentemente dal blueprint originale
+  e dagli altri MissionAssignment.
+end note
+
+note right of UC_HOOK
+  Condizionale: solo se PluginRegistry è presente.
+  Copre BEFORE_CREATE_ASSIGNMENT (può abortire)
+  e AFTER_CREATE_ASSIGNMENT (post-persistenza).
+end note
+
+@enduml

@@ -1,0 +1,122 @@
+@startuml activity_assegna_badge
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Attività: Assegnazione di un Badge (a MissionAssignment o Activity)
+
+start
+
+:Ricevi richiesta di creazione BadgeAward
+(badge_id, target_type, target_id);
+
+:Carica il Badge dal repository;
+
+if (Badge trovato?) then (no)
+  :Restituisci NotFoundError;
+  stop
+else (sì)
+endif
+
+if (target_type == ASSIGNMENT?) then (sì)
+
+  :Carica MissionAssignment dal repository;
+
+  if (Assignment trovato?) then (no)
+    :Restituisci NotFoundError;
+    stop
+  else (sì)
+  endif
+
+  if (assignment.status == COMPLETED?) then (no)
+    :Restituisci ValidationError
+    "BadgeAward creabile solo per assignment
+     con stato COMPLETED";
+    stop
+  else (sì)
+  endif
+
+  if (BadgeAward già presente per assignment?) then (sì)
+    :Restituisci ValidationError
+    "BadgeAward già presente per questo assignment";
+    stop
+  else (no)
+  endif
+
+else (ACTIVITY)
+
+  :Carica Activity dal repository;
+
+  if (Attività trovata?) then (no)
+    :Restituisci NotFoundError;
+    stop
+  else (sì)
+  endif
+
+  if (activity.status == COMPLETED?) then (no)
+    :Restituisci ValidationError
+    "BadgeAward creabile solo per attività
+     con stato COMPLETED";
+    stop
+  else (sì)
+  endif
+
+  if (BadgeAward già presente per attività?) then (sì)
+    :Restituisci ValidationError
+    "BadgeAward già presente per questa attività";
+    stop
+  else (no)
+  endif
+
+endif
+
+:PluginRegistry.fire(BEFORE_AWARD_BADGE,
+  HookContext(operator_id, {badge_id, target_type, target_id}));
+
+if (Plugin abort?) then (sì)
+  :OperationAbortedError
+  propagata al frontend;
+  stop
+else (no)
+endif
+
+if (target_type == ASSIGNMENT?) then (sì)
+
+  :Crea BadgeAward per assignment
+  (badge_id, target_type, target_id,
+   awarded_at);
+
+  if (assignment.assignee_type == GROUP?) then (sì)
+    :Recupera Person del gruppo tramite
+    PersonRepository.get_by_group(assignee_id);
+    :Estrae gli UUID — questi sono i
+    destinatari della propagazione;
+  else (PERSON)
+    :Il destinatario è la persona diretta
+    (assignment.assignee_id);
+  endif
+
+else (ACTIVITY)
+
+  :Crea BadgeAward per attività
+  (badge_id, target_type, target_id,
+   awarded_at);
+
+  :Recupera ID assegnatari dell'attività
+  (activity.assignees);
+
+endif
+
+while (altri person_id da processare?) is (sì)
+  :Registra destinatario nel BadgeAward
+  (person_id);
+endwhile (no)
+
+:Persisti BadgeAward con destinatari;
+
+:PluginRegistry.fire(AFTER_AWARD_BADGE,
+  HookContext(operator_id, {}, result=BadgeAwardDTO));
+
+:Restituisci BadgeAwardDTO
+(badge, target_type, target_id, recipients_count);
+
+stop
+
+@enduml

@@ -1,0 +1,79 @@
+@startuml activity_crea_missione
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Attività: Creazione di una Missione (Blueprint)
+
+start
+
+:Ricevi richiesta di creazione missione
+(title, description,
+ objectives[{description, activities[{title, desc}]}]);
+
+:Valida i dati di input;
+
+if (Dati validi?) then (no)
+  :Restituisci ValidationError;
+  stop
+else (sì)
+endif
+
+if (Almeno un obiettivo fornito?) then (no)
+  :Restituisci ValidationError
+  "Almeno un obiettivo obbligatorio";
+  stop
+else (sì)
+endif
+
+:PluginRegistry.fire(BEFORE_CREATE_MISSION,
+  HookContext(operator_id, {title, description, objectives}));
+
+if (Plugin abort?) then (sì)
+  :OperationAbortedError
+  propagata al frontend;
+  stop
+else (no)
+endif
+
+:Crea entità Mission (template / blueprint);
+
+repeat
+
+  if (Almeno un'attività per questo obiettivo?) then (no)
+    :Restituisci ValidationError
+    "Almeno un'attività per obiettivo";
+    stop
+  else (sì)
+  endif
+
+  :Crea Objective (blueprint);
+
+  repeat
+    :Crea Activity (blueprint, senza stato attivo);
+    :Associa Activity all'Objective;
+  repeat while (Altre attività per questo obiettivo?) is (sì)
+  -> no;
+
+  :Associa Objective alla Mission;
+
+repeat while (Altri obiettivi?) is (sì)
+-> no;
+
+:Persisti la missione blueprint completa
+(obiettivi + attività)
+via MissionRepository.save();
+
+:PluginRegistry.fire(AFTER_CREATE_MISSION,
+  HookContext(operator_id, {}, result=mission));
+
+note right
+  La Mission è ora un blueprint
+  privo di stato. Il ciclo di vita
+  inizia con la creazione di un
+  MissionAssignment tramite
+  AssignmentService.create().
+end note
+
+:Restituisci MissionDTO (blueprint creato);
+
+stop
+
+@enduml

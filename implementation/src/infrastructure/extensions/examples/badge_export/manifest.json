@@ -1,0 +1,21 @@
+{
+  "id": "badge-export",
+  "name": "Badge Export",
+  "version": "1.0.0",
+  "description": "Esporta i badge ricevuti da una persona.",
+  "code_checksum": "sha256:f1bb2a0b88918eabc794938cdf80b7cad2c5603fc7409161db8664d1425d385a",
+  "provides_routes": [
+    {
+      "path": "/extensions/badge-export/persons/<person_id>/badges",
+      "method": "GET",
+      "description": "Lista badge ricevuti da una persona."
+    }
+  ],
+  "provides_commands": [
+    {
+      "name": "badge-export",
+      "description": "Esporta i badge di una persona."
+    }
+  ],
+  "license": "CC-BY-SA-4.0"
+}

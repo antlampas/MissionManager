@@ -1,0 +1,13 @@
+{
+  "id": "status-validator",
+  "name": "Status Validator",
+  "version": "1.0.0",
+  "description": "Blocca transizioni di stato non consentite per regole business custom.",
+  "hooks": [
+    "BEFORE_UPDATE_STATUS"
+  ],
+  "trust_level": "TRUSTED",
+  "priority": 50,
+  "code_checksum": "sha256:ffaa985338bf5c36bb8e0b896761db20c7900128fc5f05723672b2f75dd9d97b",
+  "license": "CC-BY-SA-4.0"
+}

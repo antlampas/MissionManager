@@ -1,0 +1,121 @@
+@startuml 02_dominio_persone_gruppi
+' SPDX-License-Identifier: CC-BY-SA-4.0
+title Dominio - Persone, Gruppi e Zone
+
+enum ZoneType {
+  GEOGRAPHIC
+  VIRTUAL
+}
+
+class Person {
+  +id: UUID
+  +nicknames: List[str]
+  +acl: Profile
+  --
+  +primary_nickname() str
+}
+
+class Group {
+  +id: UUID
+}
+
+class Zone {
+  +id: UUID
+  +name: str
+  +type: ZoneType
+  +description: Optional[str]
+}
+
+class Profile <<value object>> {
+  +level: int
+  +groups: FrozenSet[str]
+  --
+  {static} +anonymous() Profile
+  +stored_groups() List[str]
+}
+
+interface PersonRepository {
+  +get(id: UUID) Person
+  +save(p: Person) Person
+  +list(filters: dict) List[Person]
+  +delete(id: UUID) bool
+  +exists(id: UUID) bool
+  +get_by_group(group_id: UUID) List[Person]
+}
+
+interface GroupRepository {
+  +get(id: UUID) Group
+  +save(g: Group) Group
+  +list(filters: dict) List[Group]
+  +delete(id: UUID) bool
+  +exists(id: UUID) bool
+  +add_member(group_id: UUID, person_id: UUID) void
+  +remove_member(group_id: UUID, person_id: UUID) void
+}
+
+Person "1" *-- "1" Profile : profilo ACL >
+Group "0..1" --> "0..1" Zone : zona >
+Zone --> ZoneType
+
+PersonRepository --> Person : gestisce
+GroupRepository --> Group : gestisce
+PersonRepository --> Group : get_by_group()
+
+note right of PersonRepository
+  Contratto di persistenza per Person.
+  exists(): verifica l'esistenza
+  prima di creare un assignment.
+  get_by_group(): risolve i membri
+  di un Group per la propagazione badge
+  e la verifica del perimetro in
+  ActivityService.assign_to().
+  Usato da: AssignmentService,
+  ActivityService, BadgeService,
+  PersonService.
+end note
+
+note right of GroupRepository
+  Contratto di persistenza per Group.
+  exists(): verifica l'esistenza di un
+  gruppo prima di creare un assignment
+  di tipo GROUP.
+  add_member()/remove_member(): gestiscono
+  la membership dei Group di dominio.
+  Usato da: AssignmentService,
+  ActivityService, PersonService.
+end note
+
+note right of Person
+  Operatore del dominio.
+  nicknames: lista di alias per la
+  visualizzazione; primary_nickname()
+  restituisce il primo elemento.
+  acl è il Profile valutato dal
+  sistema ACL (DESIGN §10).
+end note
+
+note right of Group
+  Raggruppa persone per assegnazione
+  collettiva di missioni.
+  I membri vengono risolti tramite
+  PersonRepository.get_by_group()
+  al momento del bisogno.
+end note
+
+note right of Zone
+  GEOGRAPHIC: zona geografica reale
+  (es. "Europa Centrale", "Settore Nord").
+  VIRTUAL: spazio non fisico
+  (es. "Internet", "Sito web",
+  "Infrastruttura cloud").
+end note
+
+note bottom of Profile
+  level: intero, più basso = più privilegiato
+  (0=amministratore dei default di bootstrap;
+  la sentinella massima è il profilo anonimo).
+  groups: gruppi ACL (es. "operators");
+  include sempre il gruppo universale "public".
+end note
+
+@enduml
