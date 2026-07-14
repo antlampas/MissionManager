@@ -98,6 +98,7 @@ Questo documento descrive l'architettura di MissionManager: il modello del domin
     - 15.4 [ExtensionLoader](#154-extensionloader)
     - 15.5 [Esempi di estensioni](#155-esempi-di-estensioni)
     - 15.6 [Differenza tra plugin ed estensioni](#156-differenza-tra-plugin-ed-estensioni)
+    - 15.7 [Hook point custom delle estensioni](#157-hook-point-custom-delle-estensioni)
 
 ---
 
@@ -1248,6 +1249,8 @@ HookPoint:
     BEFORE_MANAGE_MEMBERS      AFTER_MANAGE_MEMBERS
 ```
 
+Oltre ai membri dell'enum, il campo `hooks` del manifest di un plugin può elencare i nomi degli **hook point custom dichiarati dalle estensioni** (§15.7), nel formato namespaced `BEFORE_EXT:<ext_id>:<evento>` / `AFTER_EXT:<ext_id>:<evento>`; ogni altro nome viene rifiutato dal loader. I plugin possono così agganciarsi a qualunque tipo di operazione: quelle core del progetto e quelle definite dalle estensioni, con la stessa semantica (veto sui BEFORE_* TRUSTED, sandbox, priorità).
+
 `HookContext` è un oggetto tipizzato:
 
 ```
@@ -1421,4 +1424,21 @@ Scopre solo bundle `<scan_dir>/<id>/manifest.json + extension.py`. Il loader leg
 | Visibilità ai client | Trasparente — nessun nuovo endpoint o comando | Visibile — nuovi `RouteSpec` e `CommandSpec` dichiarati nel manifest |
 | Punto di integrazione | Hook BEFORE_*/AFTER_* nei service esistenti | Nuovo modulo con `execute()` + manifest letto dai frontend al bootstrap |
 | Accesso al core | Riceve dati tramite `HookContext` | Riceve i service applicativi nel costruttore |
-| Veto possibile | Sì — BEFORE_* via `ctx.abort=True` + `abort_reason` | N/A — l'estensione è l'operazione stessa |
+| Veto possibile | Sì — BEFORE_* via `ctx.abort=True` + `abort_reason` | Sì, sugli hook custom che l'estensione scatena (§15.7): un plugin TRUSTED su `BEFORE_EXT:...` può abortire l'operazione dell'estensione |
+
+### 15.7 Hook point custom delle estensioni
+
+Le operazioni introdotte dalle estensioni sono agganciabili dai plugin come quelle core: un'estensione dichiara e scatena i **propri** hook point con nome nei punti interni del suo flusso che ritiene significativi. Non esiste alcun hook automatico attorno a `execute()`: è l'autore dell'estensione a decidere quali momenti del flusso esporre e con quale payload.
+
+**Emettitore namespaced.** Il loader inietta nel costruttore dell'estensione (parametro `hook_emitter`, porta `HookEmitter` del Layer 2) un emettitore già legato all'id verificato del bundle. L'estensione sceglie solo il nome dell'evento; il nome completo dell'hook è costruito dall'emettitore:
+
+```
+BEFORE_EXT:<ext_id>:<evento>     ← fire_before(evento, payload, operator_id)
+AFTER_EXT:<ext_id>:<evento>      ← fire_after(evento, payload, result, operator_id)
+```
+
+**Semantica.** Identica ai hook core: i BEFORE_* dei plugin TRUSTED possono porre il veto (`ctx.abort = True` → `OperationAbortedError`, che propaga al frontend: 422 REST/Web, errore CLI con exit code 1); le eccezioni degli AFTER_* vengono catturate e loggate; i plugin SANDBOXED ricevono una copia difensiva e non possono né abortire né mutare il contesto; l'ordine di esecuzione segue `priority` DESC.
+
+**Sicurezza del namespace.** Il namespace obbligatorio impedisce a un'estensione di scatenare hook core "falsi" o di invadere il namespace di un'altra estensione: l'`ext_id` è quello verificato dal loader (checksum + registro installati), il charset di id ed evento è vincolato (niente `:`), e i service core scatenano gli hook con i membri dell'enum `HookPoint`, mai con stringhe — un plugin registrato su una stringa arbitraria non può quindi intercettare i flussi core. Il loader dei plugin rifiuta ogni nome di hook che non sia un membro dell'enum o un nome custom ben formato.
+
+Le tre estensioni d'esempio scatenano ciascuna i propri hook: `mission-stats:compute`, `badge-export:export`, `assignment-timeline:timeline`.

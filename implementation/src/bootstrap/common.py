@@ -268,6 +268,7 @@ def build_system(config_file: Optional[str] = None) -> BootstrappedSystem:
     extension_loader = ExtensionLoader(
         scan_paths=ext_config.scan_paths,
         installed_registry=installed_registry,
+        plugin_registry=plugin_registry,
         mission_svc=mission_svc,
         assignment_svc=assignment_svc,
         activity_svc=activity_svc,

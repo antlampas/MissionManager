@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: CC-BY-SA-4.0
-"""Estensione di esempio: timeline degli assignment di una missione."""
+"""Estensione di esempio: timeline degli assignment di una missione.
+
+Scatena gli hook custom ``BEFORE_EXT:assignment-timeline:timeline`` (con
+possibilità di veto) e ``AFTER_EXT:assignment-timeline:timeline``.
+"""
 from __future__ import annotations
 
 from src.domain.extensions import ExtensionManifest, ExtensionRequest, ExtensionResult
@@ -18,10 +22,12 @@ class Extension:
         self,
         manifest: ExtensionManifest,
         assignment_svc=None,
+        hook_emitter=None,
         **_kwargs,
     ) -> None:
         self.manifest = manifest
         self._assignment_svc = assignment_svc
+        self._hooks = hook_emitter
 
     def execute(self, request: ExtensionRequest) -> ExtensionResult:
         mission_id = request.params.get("mission_id")
@@ -31,6 +37,11 @@ class Extension:
         if self._assignment_svc is None:
             return ExtensionResult(
                 data={"error": "AssignmentService non configurato"}, status_code=500
+            )
+
+        if self._hooks is not None:
+            self._hooks.fire_before(
+                "timeline", {"mission_id": mission_id}, operator_id=request.operator_id
             )
 
         try:
@@ -54,11 +65,16 @@ class Extension:
             for a in sorted_assignments
         ]
 
-        return ExtensionResult(
-            data={
-                "mission_id": mission_id,
-                "timeline": timeline,
-                "total": len(timeline),
-            },
-            status_code=200,
-        )
+        data = {
+            "mission_id": mission_id,
+            "timeline": timeline,
+            "total": len(timeline),
+        }
+        if self._hooks is not None:
+            self._hooks.fire_after(
+                "timeline",
+                {"mission_id": mission_id},
+                result=data,
+                operator_id=request.operator_id,
+            )
+        return ExtensionResult(data=data, status_code=200)

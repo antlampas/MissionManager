@@ -97,16 +97,19 @@ def require_acl(authorization, operator_id: Optional[UUID], operation: Operation
 
 def fire_hook(
     plugin_registry,
-    hook_point: HookPoint,
+    hook_point: HookPoint | str,
     operator_id: Optional[UUID],
     payload: dict,
     result=None,
 ) -> Optional[HookContext]:
     """Esegue gli hook del punto indicato se il registry è presente.
 
-    L'operatore è risolto in modo lasco: nei flussi anonimi ammessi (es. la
-    creazione del primo amministratore) resta ``None`` nel contesto. I hook
-    BEFORE_* possono abortire: il registry solleva ``OperationAbortedError``.
+    ``hook_point`` è un membro di ``HookPoint`` per i flussi core, oppure un
+    nome stringa namespaced (``BEFORE_EXT:<id>:<evento>``) per gli hook custom
+    delle estensioni. L'operatore è risolto in modo lasco: nei flussi anonimi
+    ammessi (es. la creazione del primo amministratore) resta ``None`` nel
+    contesto. I hook BEFORE_* possono abortire: il registry solleva
+    ``OperationAbortedError``.
     """
     if plugin_registry is None:
         return None

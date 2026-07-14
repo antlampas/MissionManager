@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ...application.extension_hooks import is_extension_hook_name
 from ...application.plugin_registry import PluginRegistry
 from ...domain.plugins import HookPoint, MissionHook, PluginManifest, PluginTrustLevel
 from .trust_registry import PluginTrustRegistry
@@ -211,12 +212,18 @@ def _manifest_from_data(
     hooks_raw = data.get("hooks", [])
     if not isinstance(hooks_raw, list) or not all(isinstance(item, str) for item in hooks_raw):
         raise ValueError("hooks deve essere una lista di stringhe")
-    hooks: list[HookPoint] = []
+    hooks: list[HookPoint | str] = []
     for hook_name in hooks_raw:
         try:
             hooks.append(HookPoint(hook_name))
         except ValueError as exc:
-            raise ValueError(f"hook sconosciuto: {hook_name}") from exc
+            # Hook custom di estensione: nome namespaced BEFORE_EXT:/AFTER_EXT:
+            # validato; ogni altro nome è un errore (evita hook morti da refuso
+            # e stringhe che imitano i nomi dei hook core).
+            if is_extension_hook_name(hook_name):
+                hooks.append(hook_name)
+            else:
+                raise ValueError(f"hook sconosciuto: {hook_name}") from exc
     try:
         priority = int(data.get("priority") or 0)
     except (TypeError, ValueError) as exc:

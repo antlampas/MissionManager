@@ -69,4 +69,31 @@ class MissionExtension(Protocol):
     def execute(self, request: ExtensionRequest) -> ExtensionResult: ...
 
 
+@runtime_checkable
+class HookEmitter(Protocol):
+    """Porta con cui un'estensione scatena i propri hook point custom.
+
+    Iniettata dal loader come ``hook_emitter`` nel costruttore, già legata al
+    namespace dell'estensione (``BEFORE_EXT:<ext_id>:<evento>`` /
+    ``AFTER_EXT:<ext_id>:<evento>``). Gli hook BEFORE_* dei plugin TRUSTED
+    possono porre il veto: ``fire_before`` propaga ``OperationAbortedError``
+    e l'estensione non deve procedere con l'operazione.
+    """
+
+    def fire_before(
+        self,
+        event: str,
+        payload: Optional[dict[str, Any]] = None,
+        operator_id: Optional[UUID] = None,
+    ) -> Any: ...
+
+    def fire_after(
+        self,
+        event: str,
+        payload: Optional[dict[str, Any]] = None,
+        result: Any = None,
+        operator_id: Optional[UUID] = None,
+    ) -> Any: ...
+
+
 ExtensionComponent = MissionExtension

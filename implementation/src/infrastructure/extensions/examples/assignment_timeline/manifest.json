@@ -3,7 +3,7 @@
   "name": "Assignment Timeline",
   "version": "1.0.0",
   "description": "Timeline degli assignment di una missione ordinati per stato.",
-  "code_checksum": "sha256:f108027a9cbaf7c349d53d412a4b6c08cbaec896299f55643f86522efee6f10b",
+  "code_checksum": "sha256:3b1844377b424405f070871a1dd84c301490dd83e0a5e5ae1aa4d044828c2d87",
   "provides_routes": [
     {
       "path": "/extensions/assignment-timeline/missions/<mission_id>/timeline",

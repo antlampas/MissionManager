@@ -50,24 +50,48 @@ class Plugin:
             context.user_message = "Cancellazione vietata dal plugin di test"
 '''
 
+_VETO_ECHO_PLUGIN = '''
+import os
+
+
+class Plugin:
+    def execute(self, context):
+        if os.environ.get("MM_TEST_ABORT_ECHO") == "1":
+            context.abort = True
+            context.abort_reason = "veto echo"
+            context.user_message = "Echo vietato dal plugin di test"
+'''
+
 _ECHO_EXTENSION = '''
 from src.domain.extensions import ExtensionResult
 
 
 class Extension:
     def __init__(self, manifest=None, mission_svc=None, acl_svc=None,
-                 event_publisher=None, **_kwargs):
+                 event_publisher=None, hook_emitter=None, **_kwargs):
         self.manifest = manifest
         self._acl_svc = acl_svc
         self._event_publisher = event_publisher
+        self._hooks = hook_emitter
 
     def execute(self, request):
-        return ExtensionResult(status_code=200, data={
+        if self._hooks is not None:
+            self._hooks.fire_before(
+                "echo",
+                {"params": {k: str(v) for k, v in request.params.items()}},
+                operator_id=request.operator_id,
+            )
+        data = {
             "params": {k: str(v) for k, v in request.params.items()},
             "operator": str(request.operator_id) if request.operator_id else None,
             "has_acl_svc": self._acl_svc is not None,
             "has_event_publisher": self._event_publisher is not None,
-        })
+        }
+        if self._hooks is not None:
+            self._hooks.fire_after(
+                "echo", {}, result=data, operator_id=request.operator_id
+            )
+        return ExtensionResult(status_code=200, data=data)
 '''
 
 
@@ -130,7 +154,10 @@ def integrated_system(monkeypatch, tmp_path):
     exts_dir = tmp_path / "exts"
     hook_log = tmp_path / "hooks.jsonl"
 
-    all_hooks = [point.value for point in HookPoint]
+    all_hooks = [point.value for point in HookPoint] + [
+        "BEFORE_EXT:echo-ext:echo",
+        "AFTER_EXT:echo-ext:echo",
+    ]
     trust_entries = {
         "recorder": _write_plugin_bundle(
             plugins_dir, "recorder", _RECORDER_PLUGIN, all_hooks, priority=0
@@ -138,6 +165,10 @@ def integrated_system(monkeypatch, tmp_path):
         "veto-delete": _write_plugin_bundle(
             plugins_dir, "veto-delete", _VETO_PLUGIN,
             [HookPoint.BEFORE_DELETE.value], priority=50,
+        ),
+        "veto-echo": _write_plugin_bundle(
+            plugins_dir, "veto-echo", _VETO_ECHO_PLUGIN,
+            ["BEFORE_EXT:echo-ext:echo"], priority=50,
         ),
     }
     trust_registry = tmp_path / "trusted_plugins.json"
@@ -174,6 +205,7 @@ def integrated_system(monkeypatch, tmp_path):
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     monkeypatch.delenv("MM_TEST_ABORT_DELETE", raising=False)
+    monkeypatch.delenv("MM_TEST_ABORT_ECHO", raising=False)
 
     from src.bootstrap.rest import create_rest_app
 
@@ -199,7 +231,7 @@ def _bearer(svcs):
 def test_loader_registers_plugins_and_extensions(integrated_system):
     _, svcs, _ = integrated_system
     plugin_ids = {m.id for m in svcs.plugin_registry.list_plugins()}
-    assert {"recorder", "veto-delete"} <= plugin_ids
+    assert {"recorder", "veto-delete", "veto-echo"} <= plugin_ids
     ext_ids = {m.id for m in svcs.extension_registry.list()}
     assert "echo-ext" in ext_ids
 
@@ -356,13 +388,9 @@ def test_rest_extension_routes_get_post_and_query_params(integrated_system, seed
     asyncio.run(scenario())
 
 
-def test_cli_extension_command_executes(integrated_system, seed_admin):
-    from click.testing import CliRunner
-
+def _build_cli(svcs, admin):
     from src.frontend.cli.app import create_cli
 
-    _, svcs, _ = integrated_system
-    admin = seed_admin(svcs)
     with svcs.uow.transaction():
         admin_person = svcs.person_repo.get(uuid.UUID(admin.id))
 
@@ -370,7 +398,7 @@ def test_cli_extension_command_executes(integrated_system, seed_admin):
         def get_current_operator(self):
             return admin_person
 
-    cli = create_cli(
+    return create_cli(
         mission_svc=svcs.mission,
         assignment_svc=svcs.assignment,
         activity_svc=svcs.activity,
@@ -381,6 +409,14 @@ def test_cli_extension_command_executes(integrated_system, seed_admin):
         auth_policy=svcs.auth_policy,
         operator_provider=_Provider(),
     )
+
+
+def test_cli_extension_command_executes(integrated_system, seed_admin):
+    from click.testing import CliRunner
+
+    _, svcs, _ = integrated_system
+    admin = seed_admin(svcs)
+    cli = _build_cli(svcs, admin)
     assert "echo-ext" in cli.commands
 
     runner = CliRunner()
@@ -389,3 +425,76 @@ def test_cli_extension_command_executes(integrated_system, seed_admin):
     payload = json.loads(result.output)
     assert payload["params"]["k"] == "v"
     assert payload["operator"] == admin.id
+
+
+# ---------------------------------------------------------------------------
+# Hook point custom delle estensioni (Livello 2)
+# ---------------------------------------------------------------------------
+
+def test_extension_custom_hooks_fire_via_rest(integrated_system, seed_admin):
+    app, svcs, hook_log = integrated_system
+    seed_admin(svcs)
+    headers = _bearer(svcs)
+
+    async def scenario():
+        client = app.test_client()
+        r = await client.get("/api/extensions/echo-ext/echo?x=1", headers=headers)
+        assert r.status_code == 200
+
+    asyncio.run(scenario())
+
+    records = [
+        json.loads(line)
+        for line in hook_log.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    custom = [r for r in records if r["hook"].endswith("EXT:echo-ext:echo")]
+    assert {r["hook"] for r in custom} == {
+        "BEFORE_EXT:echo-ext:echo", "AFTER_EXT:echo-ext:echo"
+    }
+    # L'operatore autenticato arriva fino agli hook custom.
+    assert all(r["operator"] is not None for r in custom)
+
+
+def test_trusted_plugin_vetoes_extension_custom_hook_rest(
+    integrated_system, seed_admin, monkeypatch
+):
+    app, svcs, _ = integrated_system
+    seed_admin(svcs)
+    headers = _bearer(svcs)
+
+    monkeypatch.setenv("MM_TEST_ABORT_ECHO", "1")
+
+    async def scenario():
+        client = app.test_client()
+        r = await client.get("/api/extensions/echo-ext/echo?x=1", headers=headers)
+        assert r.status_code == 422
+        body = await r.get_json()
+        assert "Echo vietato" in body["error"]
+
+    asyncio.run(scenario())
+
+    monkeypatch.delenv("MM_TEST_ABORT_ECHO")
+
+    async def scenario_ok():
+        client = app.test_client()
+        r = await client.get("/api/extensions/echo-ext/echo?x=1", headers=headers)
+        assert r.status_code == 200
+
+    asyncio.run(scenario_ok())
+
+
+def test_trusted_plugin_vetoes_extension_custom_hook_cli(
+    integrated_system, seed_admin, monkeypatch
+):
+    from click.testing import CliRunner
+
+    _, svcs, _ = integrated_system
+    admin = seed_admin(svcs)
+    cli = _build_cli(svcs, admin)
+
+    monkeypatch.setenv("MM_TEST_ABORT_ECHO", "1")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["echo-ext"], obj={})
+    assert result.exit_code == 1
+    assert "Echo vietato" in result.output

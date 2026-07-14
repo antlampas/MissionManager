@@ -1103,6 +1103,20 @@ HookPoint disponibili:
   BEFORE_MANAGE_MEMBERS    / AFTER_MANAGE_MEMBERS     payload: group_id, person_id, action ADD|REMOVE
 ```
 
+Oltre ai hook core dell'enum, un plugin può agganciarsi agli **hook point custom
+dichiarati dalle estensioni** (vedi §9) elencandone il nome completo nel campo
+`hooks` del manifest, nel formato namespaced:
+
+```
+BEFORE_EXT:<ext_id>:<evento>    (con veto per i plugin TRUSTED)
+AFTER_EXT:<ext_id>:<evento>     (notifica a operazione avvenuta)
+```
+
+Ogni altro nome non riconosciuto viene rifiutato dal loader (nessun hook morto
+da refuso, nessuna stringa che imita i hook core). Un plugin registrato su una
+stringa arbitraria non può comunque intercettare i flussi core: i service li
+scatenano con i membri dell'enum, mai con stringhe.
+
 Un plugin è qualsiasi oggetto Python che soddisfa il protocollo `MissionHook` (duck typing):
 
 ```python
@@ -1182,7 +1196,35 @@ class Extension:
         return ExtensionResult(data=report_data, status_code=200)
 ```
 
-Le estensioni vengono scoperte da `extensions.scan_paths` (`MISSIONMANAGER_EXTENSIONS_SCAN_PATHS`) e caricate da `ExtensionLoader` **solo se approvate** nel registro JSON degli installati (`extensions.installed_registry_path` / `MISSIONMANAGER_EXTENSIONS_INSTALLED_REGISTRY`, stesso formato a checksum del trust registry dei plugin, senza `trust_level`). Il loader inietta automaticamente nel costruttore i service richiesti per nome: `mission_svc`, `assignment_svc`, `activity_svc`, `badge_svc`, `person_svc`, `acl_svc`, `event_publisher`. I frontend leggono i manifest al bootstrap e registrano dinamicamente route e comandi dichiarati.
+Le estensioni vengono scoperte da `extensions.scan_paths` (`MISSIONMANAGER_EXTENSIONS_SCAN_PATHS`) e caricate da `ExtensionLoader` **solo se approvate** nel registro JSON degli installati (`extensions.installed_registry_path` / `MISSIONMANAGER_EXTENSIONS_INSTALLED_REGISTRY`, stesso formato a checksum del trust registry dei plugin, senza `trust_level`). Il loader inietta automaticamente nel costruttore i service richiesti per nome: `mission_svc`, `assignment_svc`, `activity_svc`, `badge_svc`, `person_svc`, `acl_svc`, `event_publisher`, più `hook_emitter` (vedi sotto). I frontend leggono i manifest al bootstrap e registrano dinamicamente route e comandi dichiarati.
+
+### Hook point custom delle estensioni
+
+Le operazioni definite dalle estensioni sono agganciabili dai plugin esattamente come quelle core: l'estensione dichiara e scatena i **propri** hook point nei punti del flusso che ritiene significativi, tramite il `hook_emitter` iniettato dal loader. L'emettitore è già legato al namespace dell'estensione (`BEFORE_EXT:<ext_id>:<evento>` / `AFTER_EXT:<ext_id>:<evento>`): l'estensione sceglie solo il nome dell'evento e non può scatenare hook core "falsi" né invadere il namespace di altre estensioni.
+
+```python
+class Extension:
+    def __init__(self, manifest=None, assignment_svc=None, hook_emitter=None, **_):
+        self.manifest = manifest
+        self._assignment_svc = assignment_svc
+        self._hooks = hook_emitter
+
+    def execute(self, request):
+        if self._hooks is not None:
+            # BEFORE_EXT:report:generate — un plugin TRUSTED può porre il veto:
+            # OperationAbortedError propaga (422 REST/Web, errore CLI).
+            self._hooks.fire_before(
+                "generate", {"mission_id": request.params.get("mission_id")},
+                operator_id=request.operator_id,
+            )
+        data = ...  # operazione dell'estensione
+        if self._hooks is not None:
+            self._hooks.fire_after("generate", {}, result=data,
+                                   operator_id=request.operator_id)
+        return ExtensionResult(data=data, status_code=200)
+```
+
+Un plugin si aggancia dichiarando il nome completo nel manifest: `"hooks": ["BEFORE_EXT:report:generate"]`. Semantica identica ai hook core: veto solo per i BEFORE_* TRUSTED, eccezioni degli AFTER_* catturate e loggate, plugin SANDBOXED su copia difensiva. Le tre estensioni d'esempio scatenano ciascuna i propri hook (`mission-stats:compute`, `badge-export:export`, `assignment-timeline:timeline`).
 
 Le route REST sono esposte sotto `/api` (es. `/api/extensions/report/…`) e quelle Web alla radice; l'ACL le governa con le entry di ambito sistema: `VIEW` su `SYSTEM:global` per le letture, `EXECUTE` su `SYSTEM:global` per le mutazioni e per i comandi CLI. Esempi funzionanti in `implementation/src/infrastructure/extensions/examples/` (con relativo `installed_extensions.json`).
 

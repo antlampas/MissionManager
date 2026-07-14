@@ -136,10 +136,15 @@ def _add_extension_command(
             if not key:
                 raise click.BadParameter("La chiave non può essere vuota", param_hint="--param")
             parsed_params[key] = value
-        result = extension_registry.execute(
-            _ext_name,
-            ExtensionRequest(operator_id=op_id, params=parsed_params, body=parsed_params),
-        )
+        try:
+            result = extension_registry.execute(
+                _ext_name,
+                ExtensionRequest(operator_id=op_id, params=parsed_params, body=parsed_params),
+            )
+        except MissionManagerError as exc:
+            # Include il veto di un plugin BEFORE_* (OperationAbortedError).
+            OutputFormatter.error(exc.message)
+            raise SystemExit(1)
         click.echo(OutputFormatter.json_output(result.data))
 
 

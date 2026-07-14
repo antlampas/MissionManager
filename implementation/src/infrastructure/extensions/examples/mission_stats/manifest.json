@@ -3,7 +3,7 @@
   "name": "Mission Stats",
   "version": "1.0.0",
   "description": "Statistiche aggregate per una missione.",
-  "code_checksum": "sha256:373e93f22314475f779316f30ce459f4a3bb4280566d5e11989a4ad57f40eecf",
+  "code_checksum": "sha256:6b6ace0889deabf97e06d35747442f805df7b38890b8aa2c88e7ff7ee2237559",
   "provides_routes": [
     {
       "path": "/extensions/mission-stats/missions/<mission_id>/stats",

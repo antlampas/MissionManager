@@ -694,6 +694,14 @@ class HookPoint(Enum):
 Nei flussi anonimi ammessi (creazione del primo amministratore) gli hook vengono eseguiti
 con `operator_id = None` nel contesto.
 
+Oltre ai membri dell'enum, il campo `hooks` del manifest può elencare i nomi degli **hook
+point custom dichiarati dalle estensioni** (DESIGN §15.7), nel formato
+`BEFORE_EXT:<ext_id>:<evento>` / `AFTER_EXT:<ext_id>:<evento>`; la validazione vive in
+`application/extension_hooks.py` (`is_extension_hook_name`) e ogni altro nome viene
+rifiutato da `PluginLoader`. `PluginRegistry` indicizza indifferentemente membri enum e
+nomi stringa (`dict[HookPoint | str, list[MissionHook]]`); i service core scatenano sempre
+membri dell'enum, quindi una stringa arbitraria non può intercettare i flussi core.
+
 #### 2.2.5 MissionExtension e tipi correlati
 
 `MissionExtension` è un Protocol strutturale per il sistema di estensioni:
@@ -1509,6 +1517,13 @@ dichiarandoli per nome. Il bootstrap inietta: `mission_svc`, `assignment_svc`,
 `activity_svc`, `badge_svc`, `person_svc`, `acl_svc`, `event_publisher` — un'estensione
 può quindi orchestrare i flussi esistenti, pubblicare eventi di dominio propri e
 consultare/gestire ACL (l'`AclService` resta autoprotetto da `MANAGE_ACL`).
+
+Il loader inietta inoltre `hook_emitter`: un `ExtensionHookEmitter`
+(`application/extension_hooks.py`, porta `HookEmitter` in `domain/extensions.py`) legato
+all'id verificato del bundle, con cui l'estensione scatena i propri hook point custom
+`BEFORE_EXT:<ext_id>:<evento>` / `AFTER_EXT:<ext_id>:<evento>` (DESIGN §15.7).
+`fire_before` propaga `OperationAbortedError` se un plugin TRUSTED pone il veto; il
+namespace è vincolato all'id dell'estensione e il charset di id/evento esclude `:`.
 
 Il loader lavora con `InstalledManifestRegistry` (`infrastructure/extensions/installed_registry.py`):
 carica solo bundle `<scan_dir>/<id>/manifest.json + extension.py`. Prima dell'import legge

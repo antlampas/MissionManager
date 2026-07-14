@@ -3,7 +3,7 @@
   "name": "Badge Export",
   "version": "1.0.0",
   "description": "Esporta i badge ricevuti da una persona.",
-  "code_checksum": "sha256:f1bb2a0b88918eabc794938cdf80b7cad2c5603fc7409161db8664d1425d385a",
+  "code_checksum": "sha256:99629af2635f666738c016204abaf578a2a76eafa08ccc9bf3fb7c4972649eff",
   "provides_routes": [
     {
       "path": "/extensions/badge-export/persons/<person_id>/badges",

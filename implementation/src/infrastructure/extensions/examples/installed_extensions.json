@@ -1,17 +1,14 @@
 {
   "assignment-timeline": {
-    "manifest_checksum": "sha256:d64c9c4f1e83dd867bf128aa43a99df7db7bb42c92e6530aeeccf7df277fe874",
-    "code_checksum": "sha256:f108027a9cbaf7c349d53d412a4b6c08cbaec896299f55643f86522efee6f10b",
-    "license": "CC-BY-SA-4.0"
+    "manifest_checksum": "sha256:0d39db89473a786de7f53f3480c2c4a64e3cc8e524754ca65d0aa1a9bb15c5e0",
+    "code_checksum": "sha256:3b1844377b424405f070871a1dd84c301490dd83e0a5e5ae1aa4d044828c2d87"
   },
   "badge-export": {
-    "manifest_checksum": "sha256:236131283b42ba1baebd995609b9f2dd9fd1aff832088d59d7c7afc8ac3dd5b9",
-    "code_checksum": "sha256:f1bb2a0b88918eabc794938cdf80b7cad2c5603fc7409161db8664d1425d385a",
-    "license": "CC-BY-SA-4.0"
+    "manifest_checksum": "sha256:6bb5b300d102960ba5d5b0e506a7c3788c81f69fb9aff581eb702467e24815d5",
+    "code_checksum": "sha256:99629af2635f666738c016204abaf578a2a76eafa08ccc9bf3fb7c4972649eff"
   },
   "mission-stats": {
-    "manifest_checksum": "sha256:cd5a4f9475759fdfcfdd470551ac91e6e36c155d5c2d084311d874986dbe2b61",
-    "code_checksum": "sha256:373e93f22314475f779316f30ce459f4a3bb4280566d5e11989a4ad57f40eecf",
-    "license": "CC-BY-SA-4.0"
+    "manifest_checksum": "sha256:afd9fd299133d4ae99cbda2d3d323a680baf4d3d1cc9f80b031fcfbbc27b1238",
+    "code_checksum": "sha256:6b6ace0889deabf97e06d35747442f805df7b38890b8aa2c88e7ff7ee2237559"
   }
 }

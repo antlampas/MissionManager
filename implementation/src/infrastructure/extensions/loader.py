@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ...application.extension_hooks import ExtensionHookEmitter
 from ...application.extension_registry import accepts_subject
 from ...domain.extensions import (
     CommandSpec,
@@ -32,10 +33,12 @@ class ExtensionLoader:
         self,
         scan_paths: list[str],
         installed_registry: InstalledManifestRegistry | None = None,
+        plugin_registry: Any | None = None,
         **services: Any,
     ) -> None:
         self._scan_paths = scan_paths
         self._registry = installed_registry or InstalledManifestRegistry()
+        self._plugin_registry = plugin_registry
         self._services = services
 
     def load_all(self) -> list[MissionExtension]:
@@ -144,8 +147,12 @@ class ExtensionLoader:
         if extension_class is None:
             logger.error("ExtensionLoader: classe Extension non trovata in %s", code_path)
             return None
+        services = dict(self._services)
         try:
-            inner = _instantiate_extension(extension_class, manifest, self._services)
+            # L'emettitore è legato all'id verificato del bundle: l'estensione
+            # può scatenare solo hook nel proprio namespace BEFORE_EXT:/AFTER_EXT:.
+            services["hook_emitter"] = ExtensionHookEmitter(self._plugin_registry, ext_id)
+            inner = _instantiate_extension(extension_class, manifest, services)
         except Exception as exc:
             logger.error("ExtensionLoader: impossibile istanziare %s: %s", ext_id, exc)
             return None
