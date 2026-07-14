@@ -230,9 +230,27 @@ class AssignmentService:
                     f"(limite: {policy.max_concurrent})"
                 )
 
+        from ._shared import fire_hook
+        assign_payload = {
+            "entity_id": assignment_id,
+            "entity_type": "ASSIGNMENT",
+            "action": "ASSIGN",
+            "assignee_type": assignee_type,
+            "assignee_id": assignee_id,
+        }
+        fire_hook(self._plugin_registry, HookPoint.BEFORE_ASSIGN, op_id, assign_payload)
+
         assignment.assign_to(parsed_type, parsed_id)
         assignment.validate()
         self._assignment_repo.save(assignment)
+
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_ASSIGN,
+            op_id,
+            assign_payload,
+            result=assignment,
+        )
         if self._events:
             self._events.publish(AssignmentCreated(
                 occurred_at=datetime.now(tz=timezone.utc),
@@ -398,9 +416,9 @@ class AssignmentService:
         assignment_id: str,
         operator_id: Optional[UUID] = None,
     ) -> None:
-        require_operator_id(operator_id)
+        op_id = require_operator_id(operator_id)
         uuid = UUID(assignment_id)
-        from ._shared import require_acl
+        from ._shared import fire_hook, require_acl
         require_acl(
             self._authz,
             operator_id,
@@ -413,11 +431,14 @@ class AssignmentService:
                 resource_type="assignment",
                 resource_id=uuid,
             )
+        delete_payload = {"entity_id": assignment_id, "entity_type": "ASSIGNMENT"}
+        fire_hook(self._plugin_registry, HookPoint.BEFORE_DELETE, op_id, delete_payload)
         self._assignment_repo.delete(uuid)
         if self._acl_service is not None:
             self._acl_service.on_resource_deleted(
                 ResourceRef(ResourceType.ASSIGNMENT, uuid)
             )
+        fire_hook(self._plugin_registry, HookPoint.AFTER_DELETE, op_id, delete_payload)
 
     # ------------------------------------------------------------------
     # helpers

@@ -8,10 +8,11 @@ from ...domain.acl import Operation, Profile, ResourceRef, SYSTEM_RESOURCE
 from ...domain.entities import Group, Person, Zone
 from ...domain.enums import ResourceType, ZoneType
 from ...domain.exceptions import NotFoundError, ValidationError
+from ...domain.plugins import HookPoint
 from ...domain.repositories import GroupRepository, PersonRepository
 from .dto import GroupDTO, PersonDTO
 from ..plugin_registry import PluginRegistry
-from ._shared import transactional
+from ._shared import fire_hook, transactional
 
 
 class PersonService:
@@ -56,9 +57,20 @@ class PersonService:
             raise ValidationError(
                 "Almeno un nickname non vuoto è obbligatorio", field="nicknames"
             )
+        person_payload = {"nicknames": list(nicknames)}
+        fire_hook(
+            self._plugin_registry, HookPoint.BEFORE_CREATE_PERSON, operator_id, person_payload
+        )
         person = Person(id=uuid4(), nicknames=nicknames, acl=Profile())
         person.validate()
         self._person_repo.save(person)
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_CREATE_PERSON,
+            operator_id,
+            person_payload,
+            result=person,
+        )
         return PersonDTO.from_person(person)
 
     @transactional
@@ -76,10 +88,21 @@ class PersonService:
             ResourceRef(ResourceType.PERSON, UUID(id)),
         )
         person = self._person_repo.get(UUID(id))
+        update_payload = {"person_id": id, "nicknames": nicknames}
+        fire_hook(
+            self._plugin_registry, HookPoint.BEFORE_UPDATE_PERSON, operator_id, update_payload
+        )
         if nicknames is not None:
             person.nicknames = self._normalize_nicknames(nicknames)
         person.validate()
         self._person_repo.save(person)
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_UPDATE_PERSON,
+            operator_id,
+            update_payload,
+            result=person,
+        )
         return PersonDTO.from_person(person)
 
     @transactional
@@ -138,11 +161,14 @@ class PersonService:
                 resource_type="person",
                 resource_id=uuid,
             )
+        delete_payload = {"entity_id": id, "entity_type": "PERSON"}
+        fire_hook(self._plugin_registry, HookPoint.BEFORE_DELETE, operator_id, delete_payload)
         self._person_repo.delete(uuid)
         # Cascata sui soggetti: le entry USER(id) della persona rimossa non
         # devono restare orfane nel repository ACL.
         if self._acl_service is not None:
             self._acl_service.on_subject_deleted(uuid)
+        fire_hook(self._plugin_registry, HookPoint.AFTER_DELETE, operator_id, delete_payload)
 
     @transactional
     def get(self, id: str, operator_id: Optional[UUID] = None) -> PersonDTO:
@@ -203,9 +229,24 @@ class PersonService:
             zone_type=zone_type,
             zone_description=zone_description,
         )
+        group_payload = {
+            "name": name,
+            "zone_type": zone_type,
+            "zone_description": zone_description,
+        }
+        fire_hook(
+            self._plugin_registry, HookPoint.BEFORE_CREATE_GROUP, operator_id, group_payload
+        )
         group = Group(id=uuid4(), zone=zone)
         group.validate()
         self._group_repo.save(group)
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_CREATE_GROUP,
+            operator_id,
+            group_payload,
+            result=group,
+        )
         return GroupDTO.from_group(group)
 
     @transactional
@@ -229,6 +270,19 @@ class PersonService:
         if name is None and zone_type is None and zone_description is None:
             return GroupDTO.from_group(group)
 
+        group_update_payload = {
+            "group_id": group_id,
+            "name": name,
+            "zone_type": zone_type,
+            "zone_description": zone_description,
+        }
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.BEFORE_UPDATE_GROUP,
+            operator_id,
+            group_update_payload,
+        )
+
         current = group.zone
         group.zone = self._build_zone(
             zone_id=current.id if current else uuid4(),
@@ -244,6 +298,13 @@ class PersonService:
         )
         group.validate()
         self._group_repo.save(group)
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_UPDATE_GROUP,
+            operator_id,
+            group_update_payload,
+            result=group,
+        )
         return GroupDTO.from_group(group)
 
     @transactional
@@ -262,7 +323,10 @@ class PersonService:
                 resource_type="group",
                 resource_id=uuid,
             )
+        delete_payload = {"entity_id": group_id, "entity_type": "GROUP"}
+        fire_hook(self._plugin_registry, HookPoint.BEFORE_DELETE, operator_id, delete_payload)
         self._group_repo.delete(uuid)
+        fire_hook(self._plugin_registry, HookPoint.AFTER_DELETE, operator_id, delete_payload)
 
     @transactional
     def get_group(self, group_id: str, operator_id: Optional[UUID] = None) -> GroupDTO:
@@ -312,10 +376,17 @@ class PersonService:
                 resource_type="person",
                 resource_id=person_uuid,
             )
+        member_payload = {"group_id": group_id, "person_id": person_id, "action": "ADD"}
+        fire_hook(
+            self._plugin_registry, HookPoint.BEFORE_MANAGE_MEMBERS, operator_id, member_payload
+        )
         try:
             self._group_repo.add_member(group_uuid, person_uuid)
         except ValueError as exc:
             raise ValidationError(str(exc), field="person_id") from None
+        fire_hook(
+            self._plugin_registry, HookPoint.AFTER_MANAGE_MEMBERS, operator_id, member_payload
+        )
 
     @transactional
     def remove_group_member(
@@ -328,7 +399,14 @@ class PersonService:
             Operation.MANAGE_MEMBERS,
             ResourceRef(ResourceType.GROUP, UUID(group_id)),
         )
+        member_payload = {"group_id": group_id, "person_id": person_id, "action": "REMOVE"}
+        fire_hook(
+            self._plugin_registry, HookPoint.BEFORE_MANAGE_MEMBERS, operator_id, member_payload
+        )
         self._group_repo.remove_member(UUID(group_id), UUID(person_id))
+        fire_hook(
+            self._plugin_registry, HookPoint.AFTER_MANAGE_MEMBERS, operator_id, member_payload
+        )
 
     @staticmethod
     def _normalize_nicknames(nicknames: list[str]) -> list[str]:

@@ -1230,7 +1230,7 @@ PluginManifest:
 
 Un plugin installabile è sempre un bundle `plugin_id/manifest.json + plugin.py`. `PluginLoader` legge `manifest.json` senza eseguire codice, verifica il checksum del manifest e del codice contro il registry esterno, converte gli hook stringa in `HookPoint` e importa `plugin.py` solo dopo il successo di entrambe le verifiche. I file `.py` flat non sono caricabili.
 
-`HookPoint` è un enum del Layer 2 con 8 costanti (4 operazioni × BEFORE/AFTER):
+`HookPoint` è un enum del Layer 2 con 24 costanti (12 operazioni × BEFORE/AFTER), che copre tutte le operazioni mutanti dei service di dominio. Gli hook specifici coprono le operazioni con payload proprio; gli hook generici (`UPDATE_STATUS`, `ASSIGN`, `DELETE`) coprono più tipi di entità e portano `entity_type` nel payload. I sottosistemi di sicurezza (ACL, autenticazione, gestione profili) non espongono hook per progetto (anti-escalation).
 
 ```
 HookPoint:
@@ -1238,6 +1238,14 @@ HookPoint:
     BEFORE_CREATE_ASSIGNMENT   AFTER_CREATE_ASSIGNMENT
     BEFORE_UPDATE_STATUS       AFTER_UPDATE_STATUS
     BEFORE_AWARD_BADGE         AFTER_AWARD_BADGE
+    BEFORE_ASSIGN              AFTER_ASSIGN
+    BEFORE_DELETE              AFTER_DELETE
+    BEFORE_CREATE_BADGE        AFTER_CREATE_BADGE
+    BEFORE_CREATE_PERSON       AFTER_CREATE_PERSON
+    BEFORE_UPDATE_PERSON       AFTER_UPDATE_PERSON
+    BEFORE_CREATE_GROUP        AFTER_CREATE_GROUP
+    BEFORE_UPDATE_GROUP        AFTER_UPDATE_GROUP
+    BEFORE_MANAGE_MEMBERS      AFTER_MANAGE_MEMBERS
 ```
 
 `HookContext` è un oggetto tipizzato:
@@ -1260,10 +1268,28 @@ HookContext:
 | `AFTER_CREATE_MISSION` | post-creazione blueprint | no | `result` = `mission` appena persistita |
 | `BEFORE_CREATE_ASSIGNMENT` | pre-creazione assignment | sì | `payload` con `mission_id`, `assignee_type`, `assignee_id` |
 | `AFTER_CREATE_ASSIGNMENT` | post-creazione assignment | no | `result` = `MissionAssignment` creato |
-| `BEFORE_UPDATE_STATUS` | pre-transizione stato | sì | `payload` con `entity_id`, `entity_type`, `new_status` |
+| `BEFORE_UPDATE_STATUS` | pre-transizione stato | sì | `payload` con `entity_id`, `entity_type` (`ASSIGNMENT`\|`ACTIVITY`), `new_status` |
 | `AFTER_UPDATE_STATUS` | post-transizione stato | no | `result` = entità con stato aggiornato |
 | `BEFORE_AWARD_BADGE` | pre-creazione `BadgeAward` | sì | `payload` con `badge_id`, `target_type`, `target_id` |
 | `AFTER_AWARD_BADGE` | post-propagazione | no | `result` = `{badge_award, target, recipients_count}` |
+| `BEFORE_ASSIGN` | pre-(dis)assegnazione | sì | `payload` con `entity_id`, `entity_type` (`ASSIGNMENT`\|`ACTIVITY`), `action` (`ASSIGN`\|`UNASSIGN`), assegnatario |
+| `AFTER_ASSIGN` | post-(dis)assegnazione | no | `result` = entità aggiornata |
+| `BEFORE_DELETE` | pre-cancellazione | sì | `payload` con `entity_id`, `entity_type` (`MISSION`\|`ASSIGNMENT`\|`PERSON`\|`GROUP`) |
+| `AFTER_DELETE` | post-cancellazione | no | stesso `payload` (l'entità non esiste più) |
+| `BEFORE_CREATE_BADGE` | pre-creazione badge | sì | `payload` con `name`, `description`, `image_url` |
+| `AFTER_CREATE_BADGE` | post-creazione badge | no | `result` = `Badge` creato |
+| `BEFORE_CREATE_PERSON` | pre-creazione persona | sì | `payload` con `nicknames` |
+| `AFTER_CREATE_PERSON` | post-creazione persona | no | `result` = `Person` creata |
+| `BEFORE_UPDATE_PERSON` | pre-modifica persona | sì | `payload` con `person_id`, `nicknames` |
+| `AFTER_UPDATE_PERSON` | post-modifica persona | no | `result` = `Person` aggiornata |
+| `BEFORE_CREATE_GROUP` | pre-creazione gruppo | sì | `payload` con `name`, `zone_type`, `zone_description` |
+| `AFTER_CREATE_GROUP` | post-creazione gruppo | no | `result` = `Group` creato |
+| `BEFORE_UPDATE_GROUP` | pre-modifica gruppo | sì | `payload` con `group_id`, `name`, `zone_type`, `zone_description` |
+| `AFTER_UPDATE_GROUP` | post-modifica gruppo | no | `result` = `Group` aggiornato |
+| `BEFORE_MANAGE_MEMBERS` | pre-modifica membership | sì | `payload` con `group_id`, `person_id`, `action` (`ADD`\|`REMOVE`) |
+| `AFTER_MANAGE_MEMBERS` | post-modifica membership | no | stesso `payload` |
+
+Nei flussi anonimi ammessi (la creazione del primo amministratore al primo avvio) gli hook vengono comunque eseguiti con `operator_id = None` nel contesto.
 
 I hook **BEFORE_\*** possono annullare l'operazione impostando `ctx.abort = True`: `PluginRegistry` interrompe l'iterazione e solleva `OperationAbortedError` (HTTP 422, errore CLI). L'operazione non procede a scritture o mutazioni di stato; eventuali letture preliminari già necessarie al service possono essere avvenute. I hook **AFTER_\*** ricevono il risultato già persistito in `ctx.result`: le eccezioni che sollevano vengono catturate e loggate, ma non propagate (l'operazione è già completata).
 
@@ -1271,7 +1297,7 @@ I hook **BEFORE_\*** possono annullare l'operazione impostando `ctx.abort = True
 
 `PluginRegistry` mantiene i plugin indicizzati per `HookPoint` ed espone quattro operazioni:
 
-- `register(hook: MissionHook)`: legge `hook.manifest.hooks` e inserisce il plugin nel dizionario interno per ogni `HookPoint` dichiarato; dopo ogni `register()` la lista per quel `HookPoint` viene riordinata per `priority` DESC (priorità maggiore = eseguito prima).
+- `register(hook: MissionHook)`: legge `hook.manifest.hooks` e inserisce il plugin nel dizionario interno per ogni `HookPoint` dichiarato; un `manifest.id` già registrato viene rifiutato con `ValueError` (nessuna doppia esecuzione silenziosa); dopo ogni `register()` la lista per quel `HookPoint` viene riordinata per `priority` DESC (priorità maggiore = eseguito prima).
 - `unregister(plugin_id: str)`: rimuove il plugin (per id) da tutti gli insiemi in cui era stato registrato.
 - `fire(point: HookPoint, context: HookContext)`: recupera la lista dei plugin registrati per quel `HookPoint` e invoca `execute(context)` su ciascuno in ordine di priorità; per i BEFORE_* controlla `ctx.abort` dopo ogni hook TRUSTED e si ferma se `True` sollevando `OperationAbortedError`; i plugin SANDBOXED ricevono `ScopedHookContext` e tutte le loro mutazioni vengono ignorate; per gli AFTER_* cattura e loga le eccezioni continuando.
 - `list_plugins() → List[PluginManifest]`: restituisce i manifest di tutti i plugin registrati (utile per introspection e diagnostica).
@@ -1359,7 +1385,7 @@ ExtensionResult:
 
 `ExtensionRegistry` mantiene le estensioni indicizzate per `id` ed espone cinque operazioni:
 
-- `register(extension: MissionExtension)`: registra l'estensione indicizzandola per `manifest.id`; l'id deve essere univoco e ogni route deve stare nel namespace `/extensions/{id}/`.
+- `register(extension: MissionExtension)`: registra l'estensione indicizzandola per `manifest.id`; l'id deve essere univoco, ogni route deve stare nel namespace `/extensions/{id}/` e non può collidere (metodo + path) con route già registrate; i nomi dei comandi CLI dichiarati non possono collidere con quelli di altre estensioni (i frontend scartano inoltre gli omonimi dei comandi core). La registrazione è atomica: in caso di conflitto (`ExtensionConflictError`) nulla resta registrato.
 - `unregister(ext_id: str)`: rimuove l'estensione dal registry.
 - `get(ext_id: str) → MissionExtension?`: restituisce l'istanza dell'estensione per id.
 - `list() → List[ExtensionManifest]`: restituisce i manifest di tutte le estensioni registrate; i frontend lo chiamano al bootstrap per decidere quali route e comandi aggiuntivi montare.
@@ -1369,7 +1395,7 @@ Al bootstrap, `ExtensionLoader` scopre e crea le istanze delle estensioni; ciasc
 
 ### 15.4 ExtensionLoader
 
-`ExtensionLoader` è un componente del **Layer 3 (Infrastructure)** responsabile della scoperta, del caricamento e dell'istanziazione delle estensioni. Risiede in `infrastructure/extensions/` insieme all'`InstalledManifestRegistry`. Riceve i service applicativi al costruttore (iniettati dal bootstrap) e li passa alle estensioni che istanzia:
+`ExtensionLoader` è un componente del **Layer 3 (Infrastructure)** responsabile della scoperta, del caricamento e dell'istanziazione delle estensioni. Risiede in `infrastructure/extensions/` insieme all'`InstalledManifestRegistry`. Riceve i service applicativi al costruttore (iniettati dal bootstrap: `mission_svc`, `assignment_svc`, `activity_svc`, `badge_svc`, `person_svc`, `acl_svc`, `event_publisher`) e li passa per nome alle estensioni che istanzia — un'estensione può così orchestrare i flussi esistenti, pubblicare eventi di dominio propri e interagire con le ACL (l'`AclService` resta autoprotetto da `MANAGE_ACL`):
 
 ```
 ExtensionLoader:

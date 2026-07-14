@@ -31,21 +31,29 @@ from .routers.persons import GroupMembersRouter, GroupRouter, PersonRouter
 def build_extension_view(ext_id: str, route_spec: Any, extension_registry: ExtensionRegistry, identity_provider: OperatorIdentityProvider):
     async def extension_view(**kwargs):
         from quart import g
+
+        from ...domain.exceptions import ValidationError
+
         operator = getattr(g, "operator", None)
         op_id = operator.id if operator else None
-        data = {}
-        try:
-            data = await request.get_json() or {}
-        except Exception:
-            pass
-        data.update(kwargs)
+        params = dict(request.args)
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            body = await request.get_json(silent=True)
+            if body is not None:
+                if not isinstance(body, dict):
+                    raise ValidationError("Il body JSON deve essere un oggetto", field="body")
+                params.update(body)
+        params.update(kwargs)
         result = extension_registry.execute(
             ext_id,
-            ExtensionRequest(operator_id=op_id, params=data, body=data),
+            ExtensionRequest(operator_id=op_id, params=params, body=params),
         )
         return jsonify({"data": result.data, "message": result.message}), result.status_code
 
-    extension_view.__name__ = f"ext_{route_spec.path.replace('/', '_').strip('_')}"
+    # Il nome include il metodo HTTP: due route con la stessa path e metodi
+    # diversi devono produrre endpoint Quart distinti.
+    safe_path = route_spec.path.replace('/', '_').strip('_')
+    extension_view.__name__ = f"ext_{route_spec.method.upper()}_{safe_path}"
     return extension_view
 
 

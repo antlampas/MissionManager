@@ -95,6 +95,33 @@ def require_acl(authorization, operator_id: Optional[UUID], operation: Operation
 
 # ── HookContext factory ───────────────────────────────────────────────────────
 
+def fire_hook(
+    plugin_registry,
+    hook_point: HookPoint,
+    operator_id: Optional[UUID],
+    payload: dict,
+    result=None,
+) -> Optional[HookContext]:
+    """Esegue gli hook del punto indicato se il registry è presente.
+
+    L'operatore è risolto in modo lasco: nei flussi anonimi ammessi (es. la
+    creazione del primo amministratore) resta ``None`` nel contesto. I hook
+    BEFORE_* possono abortire: il registry solleva ``OperationAbortedError``.
+    """
+    if plugin_registry is None:
+        return None
+    resolved_operator_id, _ = _resolve_operator(operator_id)
+    ctx = HookContext(
+        hook_point=hook_point,
+        operator_id=resolved_operator_id,
+        payload=payload,
+    )
+    if result is not None:
+        ctx.result = result
+    plugin_registry.fire(hook_point, ctx)
+    return ctx
+
+
 def make_hook_context(
     hook_point: HookPoint,
     operator_id: Optional[UUID] = None,

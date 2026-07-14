@@ -83,12 +83,22 @@ class BadgeService:
                     field="image_url",
                 )
         _op_id = require_operator_id(operator_id)
+        from ._shared import fire_hook
+        badge_payload = {"name": name, "description": desc, "image_url": image_url}
+        fire_hook(self._plugin_registry, HookPoint.BEFORE_CREATE_BADGE, _op_id, badge_payload)
         badge = Badge(id=uuid4(), name=name, description=desc, image_url=image_url)
         self._badge_repo.save(badge)
         if self._acl_service is not None:
             self._acl_service.on_resource_created(
                 ResourceRef(ResourceType.BADGE, badge.id), _op_id
             )
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_CREATE_BADGE,
+            _op_id,
+            badge_payload,
+            result=badge,
+        )
         return BadgeDTO.from_badge(badge)
 
     @transactional

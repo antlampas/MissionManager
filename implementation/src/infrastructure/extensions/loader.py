@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from ...application.extension_registry import accepts_subject
 from ...domain.extensions import (
     CommandSpec,
     ExtensionManifest,
@@ -48,21 +49,39 @@ class ExtensionLoader:
             return []
 
         extensions: list[MissionExtension] = []
+        seen_ids: set[str] = set()
         for bundle_dir in self._bundle_dirs():
             extension = self._load_bundle(bundle_dir)
-            if extension is not None:
-                extensions.append(extension)
+            if extension is None:
+                continue
+            if extension.manifest.id in seen_ids:
+                logger.warning(
+                    "ExtensionLoader: estensione duplicata %s in %s; ignorata",
+                    extension.manifest.id,
+                    bundle_dir,
+                )
+                continue
+            seen_ids.add(extension.manifest.id)
+            extensions.append(extension)
         return extensions
 
     def _bundle_dirs(self) -> list[Path]:
         bundles: list[Path] = []
+        seen: set[Path] = set()
+
+        def _add(candidate: Path) -> None:
+            resolved = candidate.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                bundles.append(candidate)
+
         for raw_path in self._scan_paths:
             scan_dir = Path(raw_path)
             if not scan_dir.is_dir():
                 logger.warning("ExtensionLoader: directory non trovata %s", raw_path)
                 continue
             if (scan_dir / "manifest.json").is_file() and (scan_dir / "extension.py").is_file():
-                bundles.append(scan_dir)
+                _add(scan_dir)
                 continue
             for child in sorted(scan_dir.iterdir()):
                 if (
@@ -70,7 +89,7 @@ class ExtensionLoader:
                     and (child / "manifest.json").is_file()
                     and (child / "extension.py").is_file()
                 ):
-                    bundles.append(child)
+                    _add(child)
         return bundles
 
     def _load_bundle(self, bundle_dir: Path) -> MissionExtension | None:
@@ -156,7 +175,7 @@ class _LoadedExtension:
     def __init__(self, inner: Any, manifest: ExtensionManifest) -> None:
         self._inner = inner
         self._manifest = manifest
-        self._accepts_subject = _accepts_subject(inner.execute)
+        self._accepts_subject = accepts_subject(inner.execute)
 
     @property
     def manifest(self) -> ExtensionManifest:
@@ -189,13 +208,6 @@ def _instantiate_extension(
         if name in params or accepts_kwargs:
             kwargs[name] = service
     return extension_class(**kwargs)
-
-
-def _accepts_subject(execute_method: Any) -> bool:
-    try:
-        return len(inspect.signature(execute_method).parameters) >= 2
-    except (TypeError, ValueError):
-        return False
 
 
 def _manifest_from_data(data: dict[str, Any], code_checksum: str) -> ExtensionManifest:

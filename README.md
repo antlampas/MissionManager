@@ -1083,29 +1083,40 @@ DELETE /api/acl/entries/<uuid>
 
 ## 8. Sistema di Plugin
 
-I plugin intercettano operazioni **esistenti** dei service (creazione missione, assegnazione, aggiornamento stato, badge) con hook BEFORE_*/AFTER_*. I plugin `BEFORE_*` possono porre il veto sull'operazione impostando `ctx.abort = True`; i plugin `AFTER_*` ricevono il risultato già persistito e le loro eccezioni vengono catturate senza interrompere il flusso.
+I plugin intercettano **tutte le operazioni mutanti** dei service di dominio (missioni, assignment, attività, badge, persone, gruppi) con hook BEFORE_*/AFTER_*. I plugin `BEFORE_*` possono porre il veto sull'operazione impostando `ctx.abort = True`; i plugin `AFTER_*` ricevono il risultato già persistito e le loro eccezioni vengono catturate senza interrompere il flusso. I sottosistemi di sicurezza (ACL, autenticazione, gestione profili) non espongono hook per progetto (anti-escalation).
 
 ```
 HookPoint disponibili:
   BEFORE_CREATE_MISSION    / AFTER_CREATE_MISSION
   BEFORE_CREATE_ASSIGNMENT / AFTER_CREATE_ASSIGNMENT
-  BEFORE_UPDATE_STATUS     / AFTER_UPDATE_STATUS
+  BEFORE_UPDATE_STATUS     / AFTER_UPDATE_STATUS      payload: entity_type ASSIGNMENT|ACTIVITY
   BEFORE_AWARD_BADGE       / AFTER_AWARD_BADGE
+  BEFORE_ASSIGN            / AFTER_ASSIGN             payload: entity_type ASSIGNMENT|ACTIVITY,
+                                                      action ASSIGN|UNASSIGN
+  BEFORE_DELETE            / AFTER_DELETE             payload: entity_type MISSION|ASSIGNMENT|
+                                                      PERSON|GROUP
+  BEFORE_CREATE_BADGE      / AFTER_CREATE_BADGE
+  BEFORE_CREATE_PERSON     / AFTER_CREATE_PERSON
+  BEFORE_UPDATE_PERSON     / AFTER_UPDATE_PERSON
+  BEFORE_CREATE_GROUP      / AFTER_CREATE_GROUP
+  BEFORE_UPDATE_GROUP      / AFTER_UPDATE_GROUP
+  BEFORE_MANAGE_MEMBERS    / AFTER_MANAGE_MEMBERS     payload: group_id, person_id, action ADD|REMOVE
 ```
 
 Un plugin è qualsiasi oggetto Python che soddisfa il protocollo `MissionHook` (duck typing):
 
 ```python
-from missionmanager.ports.plugins import MissionHook, HookContext, PluginManifest, HookPoint, PluginTrustLevel
+from src.domain.plugins import HookContext, HookPoint, PluginManifest, PluginTrustLevel
 
 class ExternalSyncHook:
     @property
     def manifest(self) -> PluginManifest:
         return PluginManifest(
-            name="external-sync",
+            id="external-sync",
+            name="External Sync",
             version="1.0",
-            hooks=[HookPoint.AFTER_UPDATE_STATUS, HookPoint.AFTER_AWARD_BADGE],
             description="Sincronizza aggiornamenti verso sistemi esterni",
+            hooks=[HookPoint.AFTER_UPDATE_STATUS, HookPoint.AFTER_AWARD_BADGE],
             trust_level=PluginTrustLevel.TRUSTED,  # default: SANDBOXED
             priority=10,                            # default: 0; più alto = eseguito prima
         )
@@ -1115,7 +1126,19 @@ class ExternalSyncHook:
         ...
 ```
 
-I plugin vengono caricati dal path configurato in `plugins.scan_paths` e registrati automaticamente al bootstrap.
+Un plugin installabile è un bundle `<plugin_id>/manifest.json + plugin.py` in cui `plugin.py` espone una classe `Plugin`. I plugin vengono caricati dai path in `plugins.scan_paths` (`MISSIONMANAGER_PLUGINS_SCAN_PATHS`) **solo se approvati** nel trust registry JSON (`plugins.trust_registry_path` / `MISSIONMANAGER_PLUGINS_TRUST_REGISTRY`), autoritativo per trust level e checksum SHA-256 di manifest e codice:
+
+```json
+{
+  "external-sync": {
+    "trust_level": "TRUSTED",
+    "manifest_checksum": "sha256:…",
+    "code_checksum": "sha256:…"
+  }
+}
+```
+
+Esempi funzionanti in `implementation/src/infrastructure/plugins/examples/` (con relativo `trusted_plugins.json`).
 
 ---
 
@@ -1123,34 +1146,45 @@ I plugin vengono caricati dal path configurato in `plugins.scan_paths` e registr
 
 Le estensioni aggiungono **nuove operazioni** al sistema, visibili come nuovi endpoint REST, route Web App o comandi CLI. Si differenziano dai plugin perché non si agganciano a operazioni esistenti ma introducono funzionalità proprie.
 
-```python
-from missionmanager.ports.extensions import (
-    MissionExtension, ExtensionManifest, RouteSpec, CommandSpec,
-    ExtensionRequest, ExtensionResult,
-)
+Un'estensione installabile è un bundle `<ext_id>/manifest.json + extension.py` in cui `extension.py` espone una classe `Extension`. Le route dichiarate devono vivere nel namespace `/extensions/<ext_id>/…` e usano la sintassi dei path Quart (`<param>`); i nomi dei comandi CLI non possono collidere con i comandi core né con quelli di altre estensioni:
 
-class ReportExtension(MissionExtension):
-    def __init__(self, assignment_svc, badge_svc, **_):
+```json
+{
+  "id": "report",
+  "name": "Report",
+  "version": "1.0.0",
+  "description": "Genera report operativi per missione",
+  "code_checksum": "sha256:…",
+  "provides_routes": [
+    {"path": "/extensions/report/missions/<mission_id>/report", "method": "GET",
+     "description": "Report missione"}
+  ],
+  "provides_commands": [
+    {"name": "report", "description": "Genera report operativo"}
+  ]
+}
+```
+
+```python
+# extension.py
+from src.domain.extensions import ExtensionRequest, ExtensionResult
+
+class Extension:
+    def __init__(self, manifest=None, assignment_svc=None, badge_svc=None, **_):
+        self.manifest = manifest
         self._assignment_svc = assignment_svc
         self._badge_svc = badge_svc
 
-    @property
-    def manifest(self) -> ExtensionManifest:
-        return ExtensionManifest(
-            name="report",
-            version="1.0",
-            description="Genera report operativi per missione",
-            provides_routes=[RouteSpec("/report/{mission_id}", "GET", "Report missione")],
-            provides_commands=[CommandSpec("report", "Genera report operativo")],
-        )
-
     def execute(self, request: ExtensionRequest) -> ExtensionResult:
-        # logica dell'estensione usando i service iniettati nel costruttore
-        ...
+        # request.params contiene query string, body JSON e parametri di path;
+        # request.operator_id è l'operatore autenticato (None se anonimo).
+        report_data = ...
         return ExtensionResult(data=report_data, status_code=200)
 ```
 
-Le estensioni vengono scoperte da `extensions.scan_paths` e caricate da `ExtensionLoader`, che inietta automaticamente i service nel costruttore. I frontend leggono i manifest al bootstrap e registrano dinamicamente le route e i comandi dichiarati.
+Le estensioni vengono scoperte da `extensions.scan_paths` (`MISSIONMANAGER_EXTENSIONS_SCAN_PATHS`) e caricate da `ExtensionLoader` **solo se approvate** nel registro JSON degli installati (`extensions.installed_registry_path` / `MISSIONMANAGER_EXTENSIONS_INSTALLED_REGISTRY`, stesso formato a checksum del trust registry dei plugin, senza `trust_level`). Il loader inietta automaticamente nel costruttore i service richiesti per nome: `mission_svc`, `assignment_svc`, `activity_svc`, `badge_svc`, `person_svc`, `acl_svc`, `event_publisher`. I frontend leggono i manifest al bootstrap e registrano dinamicamente route e comandi dichiarati.
+
+Le route REST sono esposte sotto `/api` (es. `/api/extensions/report/…`) e quelle Web alla radice; l'ACL le governa con le entry di ambito sistema: `VIEW` su `SYSTEM:global` per le letture, `EXECUTE` su `SYSTEM:global` per le mutazioni e per i comandi CLI. Esempi funzionanti in `implementation/src/infrastructure/extensions/examples/` (con relativo `installed_extensions.json`).
 
 ---
 

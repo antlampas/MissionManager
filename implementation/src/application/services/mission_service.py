@@ -194,6 +194,13 @@ class MissionService:
                 resource_type="mission",
                 resource_id=uuid,
             )
+        from ._shared import fire_hook
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.BEFORE_DELETE,
+            op_id,
+            {"entity_id": mission_id, "entity_type": "MISSION"},
+        )
         # La cancellazione della missione elimina anche gli assignment figli:
         # la cascata ACL deve coprire pure le loro entry (es. il MANAGE_ACL
         # seminato al creatore), altrimenti restano orfane in mm_acl_entries.
@@ -211,6 +218,12 @@ class MissionService:
             self._acl_service.on_resource_deleted(
                 ResourceRef(ResourceType.MISSION, uuid)
             )
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_DELETE,
+            op_id,
+            {"entity_id": mission_id, "entity_type": "MISSION"},
+        )
 
         if self._events:
             self._events.publish(MissionDeleted(

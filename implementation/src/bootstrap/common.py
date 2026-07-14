@@ -242,6 +242,7 @@ def build_system(config_file: Optional[str] = None) -> BootstrappedSystem:
         person_repo=person_repo,
         group_repo=group_repo,
         authorization_policy=auth_policy,
+        plugin_registry=plugin_registry,
         acl_service=acl_svc,
         uow=uow,
     )
@@ -272,6 +273,8 @@ def build_system(config_file: Optional[str] = None) -> BootstrappedSystem:
         activity_svc=activity_svc,
         badge_svc=badge_svc,
         person_svc=person_svc,
+        acl_svc=acl_svc,
+        event_publisher=event_publisher,
     )
     extensions = extension_loader.load_all()
     extension_registry = ExtensionRegistry()
@@ -279,7 +282,7 @@ def build_system(config_file: Optional[str] = None) -> BootstrappedSystem:
         try:
             extension_registry.register(ext)
         except Exception:
-            logging.getLogger(__name__).error(
+            logging.getLogger(__name__).exception(
                 "Bootstrap: estensione non registrata: %s", ext.manifest.id
             )
 

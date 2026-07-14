@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: CC-BY-SA-4.0
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -92,9 +93,18 @@ def create_cli(
     cli.add_command(person_commands)
     cli.add_command(acl_commands)
 
-    # Registrazione dinamica comandi da estensioni
+    # Registrazione dinamica comandi da estensioni. I nomi già in uso
+    # (comandi core o di altre estensioni) non vengono mai sovrascritti:
+    # l'omonimo dell'estensione è scartato con un errore nel log.
     for manifest in extension_registry.list():
         for cmd_spec in manifest.provides_commands:
+            if cmd_spec.name in cli.commands:
+                logging.getLogger(__name__).error(
+                    "CLI: comando %r dell'estensione %s ignorato: nome già in uso",
+                    cmd_spec.name,
+                    manifest.id,
+                )
+                continue
             _add_extension_command(cli, manifest.id, cmd_spec, extension_registry)
 
     return cli

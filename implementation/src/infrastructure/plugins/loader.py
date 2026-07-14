@@ -42,25 +42,48 @@ class PluginLoader:
             return []
 
         plugins: list[MissionHook] = []
+        seen_ids: set[str] = set()
         for bundle_dir in self._bundle_dirs():
             plugin = self._load_bundle(bundle_dir)
-            if plugin is not None:
-                plugins.append(plugin)
+            if plugin is None:
+                continue
+            if plugin.manifest.id in seen_ids:
+                logger.warning(
+                    "PluginLoader: plugin duplicato %s in %s; ignorato",
+                    plugin.manifest.id,
+                    bundle_dir,
+                )
+                continue
+            seen_ids.add(plugin.manifest.id)
+            plugins.append(plugin)
         return plugins
 
     def load_into(self, registry: PluginRegistry) -> None:
         for plugin in self.load_all():
-            registry.register(plugin)
+            try:
+                registry.register(plugin)
+            except Exception:
+                logger.exception(
+                    "PluginLoader: registrazione fallita per %s", plugin.manifest.id
+                )
 
     def _bundle_dirs(self) -> list[Path]:
         bundles: list[Path] = []
+        seen: set[Path] = set()
+
+        def _add(candidate: Path) -> None:
+            resolved = candidate.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                bundles.append(candidate)
+
         for raw_path in self._scan_paths:
             scan_dir = Path(raw_path)
             if not scan_dir.is_dir():
                 logger.warning("PluginLoader: directory non trovata %s", raw_path)
                 continue
             if (scan_dir / "manifest.json").is_file() and (scan_dir / "plugin.py").is_file():
-                bundles.append(scan_dir)
+                _add(scan_dir)
                 continue
             for child in sorted(scan_dir.iterdir()):
                 if (
@@ -68,7 +91,7 @@ class PluginLoader:
                     and (child / "manifest.json").is_file()
                     and (child / "plugin.py").is_file()
                 ):
-                    bundles.append(child)
+                    _add(child)
         return bundles
 
     def _load_bundle(self, bundle_dir: Path) -> MissionHook | None:
@@ -194,7 +217,10 @@ def _manifest_from_data(
             hooks.append(HookPoint(hook_name))
         except ValueError as exc:
             raise ValueError(f"hook sconosciuto: {hook_name}") from exc
-    priority = int(data.get("priority", 0))
+    try:
+        priority = int(data.get("priority") or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"priority non valida: {data.get('priority')!r}") from exc
     return PluginManifest(
         id=str(data["id"]),
         name=str(data.get("name") or data["id"]),

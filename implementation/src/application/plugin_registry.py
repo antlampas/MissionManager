@@ -32,16 +32,22 @@ class PluginRegistry:
     def __init__(self, trust_registry: Any | None = None) -> None:
         self._trust = trust_registry
         self._hooks: dict[HookPoint | str, list[MissionHook]] = defaultdict(list)
+        self._registered_ids: set[str] = set()
 
     def register(self, hook: MissionHook) -> None:
-        if self._trust is not None and self._registered_trust(hook.manifest.id) is None:
-            raise ValueError(f"Plugin non presente nel TrustRegistry: {hook.manifest.id}")
+        plugin_id = hook.manifest.id
+        if plugin_id in self._registered_ids:
+            raise ValueError(f"Plugin già registrato: {plugin_id}")
+        if self._trust is not None and self._registered_trust(plugin_id) is None:
+            raise ValueError(f"Plugin non presente nel TrustRegistry: {plugin_id}")
+        self._registered_ids.add(plugin_id)
         for point in hook.manifest.hooks:
             self._hooks[point].append(hook)
         for point in hook.manifest.hooks:
             self._hooks[point].sort(key=lambda h: h.manifest.priority, reverse=True)
 
     def unregister(self, plugin_id: str) -> None:
+        self._registered_ids.discard(plugin_id)
         for point in list(self._hooks.keys()):
             self._hooks[point] = [
                 h for h in self._hooks[point] if h.manifest.id != plugin_id
@@ -123,7 +129,7 @@ class PluginRegistry:
             operator_id=context.operator_id,
             payload=payload,
             result=_safe_copy(context.result),
-            subject=context.subject,
+            subject=_safe_copy(context.subject),
             abort=False,
             abort_reason=None,
             user_message=None,

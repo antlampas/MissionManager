@@ -657,7 +657,11 @@ di `fire()`. È mutabile: i plugin possono aggiornare `result` (BEFORE_* per arr
 dati pre-creazione; AFTER_* per aggiungere side-effect), oppure impostare `abort=True`
 per annullare l'operazione (solo BEFORE_*).
 
-`HookPoint` è un enum del Layer 2 con 8 costanti:
+`HookPoint` è un enum del Layer 2 con 24 costanti (12 operazioni × BEFORE/AFTER), che
+copre tutte le operazioni mutanti dei service di dominio. Gli hook generici
+(`UPDATE_STATUS`, `ASSIGN`, `DELETE`) coprono più tipi di entità e portano `entity_type`
+nel payload; i sottosistemi di sicurezza (ACL, autenticazione, profili) non espongono hook
+per progetto (anti-escalation):
 
 ```python
 class HookPoint(Enum):
@@ -665,11 +669,30 @@ class HookPoint(Enum):
     AFTER_CREATE_MISSION     = "AFTER_CREATE_MISSION"
     BEFORE_CREATE_ASSIGNMENT = "BEFORE_CREATE_ASSIGNMENT"
     AFTER_CREATE_ASSIGNMENT  = "AFTER_CREATE_ASSIGNMENT"
-    BEFORE_UPDATE_STATUS     = "BEFORE_UPDATE_STATUS"
+    BEFORE_UPDATE_STATUS     = "BEFORE_UPDATE_STATUS"    # entity_type: ASSIGNMENT|ACTIVITY
     AFTER_UPDATE_STATUS      = "AFTER_UPDATE_STATUS"
     BEFORE_AWARD_BADGE       = "BEFORE_AWARD_BADGE"
     AFTER_AWARD_BADGE        = "AFTER_AWARD_BADGE"
+    BEFORE_ASSIGN            = "BEFORE_ASSIGN"           # entity_type: ASSIGNMENT|ACTIVITY,
+    AFTER_ASSIGN             = "AFTER_ASSIGN"            #   action: ASSIGN|UNASSIGN
+    BEFORE_DELETE            = "BEFORE_DELETE"           # entity_type: MISSION|ASSIGNMENT|
+    AFTER_DELETE             = "AFTER_DELETE"            #   PERSON|GROUP
+    BEFORE_CREATE_BADGE      = "BEFORE_CREATE_BADGE"
+    AFTER_CREATE_BADGE       = "AFTER_CREATE_BADGE"
+    BEFORE_CREATE_PERSON     = "BEFORE_CREATE_PERSON"
+    AFTER_CREATE_PERSON      = "AFTER_CREATE_PERSON"
+    BEFORE_UPDATE_PERSON     = "BEFORE_UPDATE_PERSON"
+    AFTER_UPDATE_PERSON      = "AFTER_UPDATE_PERSON"
+    BEFORE_CREATE_GROUP      = "BEFORE_CREATE_GROUP"
+    AFTER_CREATE_GROUP       = "AFTER_CREATE_GROUP"
+    BEFORE_UPDATE_GROUP      = "BEFORE_UPDATE_GROUP"
+    AFTER_UPDATE_GROUP       = "AFTER_UPDATE_GROUP"
+    BEFORE_MANAGE_MEMBERS    = "BEFORE_MANAGE_MEMBERS"   # action: ADD|REMOVE
+    AFTER_MANAGE_MEMBERS     = "AFTER_MANAGE_MEMBERS"
 ```
+
+Nei flussi anonimi ammessi (creazione del primo amministratore) gli hook vengono eseguiti
+con `operator_id = None` nel contesto.
 
 #### 2.2.5 MissionExtension e tipi correlati
 
@@ -1481,8 +1504,11 @@ unregister(ext_id: str) → void
 
 `ExtensionLoader` è nel **Layer 3** (`infrastructure/extensions/loader.py`). Riceve i service
 applicativi al costruttore (iniettati dal bootstrap) e li passa alle estensioni che istanzia.
-Ogni `MissionExtension` concreta riceve nel costruttore i service di cui ha bisogno
-(`MissionService`, `BadgeService`, `PersonService`, ecc.).
+Ogni `MissionExtension` concreta riceve nel costruttore i service di cui ha bisogno,
+dichiarandoli per nome. Il bootstrap inietta: `mission_svc`, `assignment_svc`,
+`activity_svc`, `badge_svc`, `person_svc`, `acl_svc`, `event_publisher` — un'estensione
+può quindi orchestrare i flussi esistenti, pubblicare eventi di dominio propri e
+consultare/gestire ACL (l'`AclService` resta autoprotetto da `MANAGE_ACL`).
 
 Il loader lavora con `InstalledManifestRegistry` (`infrastructure/extensions/installed_registry.py`):
 carica solo bundle `<scan_dir>/<id>/manifest.json + extension.py`. Prima dell'import legge

@@ -125,10 +125,27 @@ class ActivityService:
                 field="person_id",
             )
 
+        from ._shared import fire_hook
+        assign_payload = {
+            "entity_id": activity_id,
+            "entity_type": "ACTIVITY",
+            "action": "ASSIGN",
+            "person_id": person_id,
+        }
+        fire_hook(self._plugin_registry, HookPoint.BEFORE_ASSIGN, op_id, assign_payload)
+
         activity.assignees.append(person_uuid)
         if activity.status == Status.UNASSIGNED:
             activity.update_status(Status.ASSIGNED)
         self._activity_repo.save(activity)
+
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_ASSIGN,
+            op_id,
+            assign_payload,
+            result=activity,
+        )
 
         if self._events:
             self._events.publish(ActivityAssigned(
@@ -164,10 +181,25 @@ class ActivityService:
                 "La persona non è assegnata a questa attività",
                 field="person_id",
             )
+        from ._shared import fire_hook
+        unassign_payload = {
+            "entity_id": activity_id,
+            "entity_type": "ACTIVITY",
+            "action": "UNASSIGN",
+            "person_id": person_id,
+        }
+        fire_hook(self._plugin_registry, HookPoint.BEFORE_ASSIGN, op_id, unassign_payload)
         activity.assignees.remove(person_uuid)
         if not activity.assignees and activity.status == Status.ASSIGNED:
             activity.update_status(Status.UNASSIGNED)
         self._activity_repo.save(activity)
+        fire_hook(
+            self._plugin_registry,
+            HookPoint.AFTER_ASSIGN,
+            op_id,
+            unassign_payload,
+            result=activity,
+        )
         return ActivityDTO.from_activity(activity)
 
     @transactional
