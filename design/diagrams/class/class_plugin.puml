@@ -147,7 +147,7 @@ note right of PluginRegistry
   register() usa manifest.id, non manifest.name.
   fire() esegue in priority decrescente.
 
-  TRUSTED riceve HookContext reale e puo' propagare
+  TRUSTED riceve HookContext reale e può propagare
   result, user_message e abort nei BEFORE_*.
   SANDBOXED riceve ScopedHookContext senza contenuti
   sensibili; ogni mutazione prodotta viene ignorata.

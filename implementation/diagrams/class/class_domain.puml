@@ -158,7 +158,7 @@ note right of MissionAssignment
   la propria copia istanziata di obiettivi e
   attività, indipendente dagli altri assignment.
   assign_to(): imposta assignee_type e assignee_id;
-  se status == UNASSIGNED, transisce ad ASSIGNED.
+  se status == UNASSIGNED, passa ad ASSIGNED.
   update_status(): invoca Status.can_transition_to()
   prima di aggiornare; solleva StatusTransitionError.
   compute_outcome(): calcola l'esito aggregando

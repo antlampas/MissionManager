@@ -171,7 +171,7 @@ note right of MissionAssignment
   tramite assign_to() quando viene
   assegnata a una Person o a un Group,
   indipendentemente dallo stato delle
-  attivita'. Passa a IN_PROGRESS quando
+  attività. Passa a IN_PROGRESS quando
   almeno una Activity interna raggiunge
   lo stato IN_PROGRESS (transizione
   automatica in ActivityService.update_status()).

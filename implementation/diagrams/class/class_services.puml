@@ -401,7 +401,7 @@ PersonService --> SqlAlchemyUnitOfWork
 ' ── Note ─────────────────────────────────────────────────────
 note right of AssignmentService
   create() verifica AssignmentPolicy prima
-  del hook BEFORE_CREATE_ASSIGNMENT:
+  dell'hook BEFORE_CREATE_ASSIGNMENT:
   1. se max_total impostato:
      count_by_mission() >= max_total
      → ValidationError.

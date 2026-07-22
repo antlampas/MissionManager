@@ -295,7 +295,7 @@ note right of MissionService
 end note
 
 note right of AssignmentService
-  create() verifica prima la AssignmentPolicy
+  create() verifica prima l'AssignmentPolicy
   della Mission:
   1. se max_total impostato:
      count_by_mission() >= max_total
@@ -305,7 +305,7 @@ note right of AssignmentService
      → ValidationError.
      count_active conta ASSIGNED + IN_PROGRESS;
      UNASSIGNED è una bozza.
-  I controlli di policy precedono il hook
+  I controlli di policy precedono l'hook
   BEFORE_CREATE_ASSIGNMENT.
   Se l'assegnatario è fornito, lo valida
   tramite PersonRepository.exists() o

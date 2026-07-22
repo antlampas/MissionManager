@@ -123,7 +123,7 @@ note right of OperatorIdentityProvider
   Porta distinta da PersonRepository:
   stabilisce chi sta effettuando
   la richiesta corrente. Ogni frontend
-  puo' avere il proprio adapter.
+  può avere il proprio adapter.
 end note
 
 note bottom of RepositoryAdapter

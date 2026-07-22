@@ -118,7 +118,7 @@ note right of OperationAbortedError
   abort_reason: messaggio esplicativo fornito
   dal plugin; è di uso interno (loggato lato server)
   e non sempre esposto al client per evitare
-  di rivelare dettagli dell'implementazione del hook.
+  di rivelare dettagli dell'implementazione dell'hook.
   Il frontend REST restituisce il message generico;
   abort_reason è disponibile nei log applicativi.
 end note

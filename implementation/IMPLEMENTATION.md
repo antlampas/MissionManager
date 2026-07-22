@@ -239,8 +239,8 @@ Le entità sono `@dataclass` mutabili definite in `domain/entities.py`. Ognuna e
 |---|---|---|
 | `Mission` | `domain/entities.py` | Blueprint della missione; `validate()` verifica ≥1 obiettivo (e ≥1 attività valida per obiettivo via `Objective.validate()`). **Immutabile dopo la creazione**: obiettivi/attività si definiscono solo nel costruttore (`MissionService.create`); non esistono metodi per aggiungerli o modificarli a posteriori |
 | `MissionAssignment` | `domain/entities.py` | `assignee_type` e `assignee_id` sono `None` finché `status == UNASSIGNED`; `update_status()` chiama `Status.can_transition_to()` prima di mutare; `award_badge()` verifica `status == COMPLETED` |
-| `Objective` | `domain/entities.py` | `compute_outcome()` calcola l'esito da `Activity.status` degli figli; `validate()` richiede ≥1 attività, verifica `activity.objective_id` e delega ad `Activity.validate()` |
-| `Activity` | `domain/entities.py` | `assignees: list[UUID]` accumula gli assegnatari; richiede titolo non vuoto; `update_status()` chiama `Status.can_transition_to()` e muta lo stato. L'auto-cascade verso il `MissionAssignment` padre **non** è gestito dall'entità (nessun callback): è orchestrato da `ActivityService.update_status()` |
+| `Objective` | `domain/entities.py` | `compute_outcome()` calcola l'esito da `Activity.status` delle attività figlie; `validate()` richiede ≥1 attività, verifica `activity.objective_id` e delega ad `Activity.validate()` |
+| `Activity` | `domain/entities.py` | `assignees: list[UUID]` accumula gli assegnatari; richiede titolo non vuoto; `update_status()` chiama `Status.can_transition_to()` e muta lo stato. L'auto-cascade verso il `MissionAssignment` padre **non** è gestita dall'entità (nessun callback): è orchestrata da `ActivityService.update_status()` |
 | `Badge` | `domain/entities.py` | Definizione riutilizzabile; non muta dopo la creazione |
 | `BadgeAward` | `domain/entities.py` | `target_type` (`ASSIGNMENT` \| `ACTIVITY`), `target_id`, `recipients: list[UUID]` con i destinatari propagati al momento della creazione |
 
@@ -2485,10 +2485,10 @@ richiede admin API dell'IdP. Quando `auth=oidc` e sono presenti `OIDC_URL` e
 `OIDC_ADMIN_TOKEN`, il loader seleziona automaticamente `persons=oidc` per la modalità
 OIDC completa (gestione utenti/gruppi sull'IdP), salvo `MISSIONMANAGER_PERSON_BACKEND=local`
 impostato esplicitamente. La combinazione inversa (`persons=oidc`, `auth=local`) viene
-rifiutata al load della configurazione (`SecurityConfigLoader`).
+rifiutata durante il caricamento della configurazione (`SecurityConfigLoader`).
 
 **Mappatura del subject (`sub` ↔ id admin).** I binding in `mm_external_identities` sono
-sempre chiavati sul *path-id* usato dall'admin API (`pk` per Authentik, `id` per Keycloak).
+sempre indicizzati in base al *path-id* usato dall'admin API (`pk` per Authentik, `id` per Keycloak).
 Il claim `sub` del token coincide con quel path-id solo in alcune configurazioni: Keycloak usa
 l'UUID utente sia come `sub` sia come id admin; Authentik invece, a seconda del *Subject mode*
 del provider, può emettere un `sub` diverso (uuid utente, username, …). Per evitare binding
@@ -2529,7 +2529,7 @@ amministrativo; l'IdP contiene di norma anche utenti non amministratori, quindi 
 "esiste un utente"). In assenza di un amministratore, `AuthService.create_initial_admin`
 crea l'utente tramite la admin API dell'IdP (POST utenti con `acl_level=0`) e ne imposta la password
 (`OidcPersonRepository.set_password`: `set_password/` su Authentik, `reset-password` su
-Keycloak). Le due entry-point sono `/setup` (Web) e `person create-superuser` (CLI). Se
+Keycloak). I due entry point sono `/setup` (Web) e `person create-superuser` (CLI). Se
 l'impostazione della password fallisce, l'utente appena creato viene rimosso dall'IdP per
 compensazione.
 

@@ -803,7 +803,7 @@ app.register_blueprint(bp)          # ← montare ALLA RADICE (vedi vincoli sott
 
 ## 7. Deployment — REST API
 
-La REST API è anch'essa esposta come **callable ASGI** in `src.asgi:rest_app`. Stessa architettura della Web App, senza WebSocket.
+La REST API è anch'essa esposta come **callable ASGI** in `src.asgi:rest_app` e adotta la stessa architettura della Web App, senza WebSocket.
 
 ### Stack di deployment
 
@@ -1103,7 +1103,7 @@ HookPoint disponibili:
   BEFORE_MANAGE_MEMBERS    / AFTER_MANAGE_MEMBERS     payload: group_id, person_id, action ADD|REMOVE
 ```
 
-Oltre ai hook core dell'enum, un plugin può agganciarsi agli **hook point custom
+Oltre agli hook core dell'enum, un plugin può agganciarsi agli **hook point custom
 dichiarati dalle estensioni** (vedi §9) elencandone il nome completo nel campo
 `hooks` del manifest, nel formato namespaced:
 
@@ -1113,7 +1113,7 @@ AFTER_EXT:<ext_id>:<evento>     (notifica a operazione avvenuta)
 ```
 
 Ogni altro nome non riconosciuto viene rifiutato dal loader (nessun hook morto
-da refuso, nessuna stringa che imita i hook core). Un plugin registrato su una
+da refuso, nessuna stringa che imita gli hook core). Un plugin registrato su una
 stringa arbitraria non può comunque intercettare i flussi core: i service li
 scatenano con i membri dell'enum, mai con stringhe.
 
@@ -1224,7 +1224,7 @@ class Extension:
         return ExtensionResult(data=data, status_code=200)
 ```
 
-Un plugin si aggancia dichiarando il nome completo nel manifest: `"hooks": ["BEFORE_EXT:report:generate"]`. Semantica identica ai hook core: veto solo per i BEFORE_* TRUSTED, eccezioni degli AFTER_* catturate e loggate, plugin SANDBOXED su copia difensiva. Le tre estensioni d'esempio scatenano ciascuna i propri hook (`mission-stats:compute`, `badge-export:export`, `assignment-timeline:timeline`).
+Un plugin si aggancia dichiarando il nome completo nel manifest: `"hooks": ["BEFORE_EXT:report:generate"]`. Semantica identica agli hook core: veto solo per i BEFORE_* TRUSTED, eccezioni degli AFTER_* catturate e loggate, plugin SANDBOXED su copia difensiva. Le tre estensioni d'esempio scatenano ciascuna i propri hook (`mission-stats:compute`, `badge-export:export`, `assignment-timeline:timeline`).
 
 Le route REST sono esposte sotto `/api` (es. `/api/extensions/report/…`) e quelle Web alla radice; l'ACL le governa con le entry di ambito sistema: `VIEW` su `SYSTEM:global` per le letture, `EXECUTE` su `SYSTEM:global` per le mutazioni e per i comandi CLI. Esempi funzionanti in `implementation/src/infrastructure/extensions/examples/` (con relativo `installed_extensions.json`).
 

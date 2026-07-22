@@ -48,7 +48,7 @@ STORE --> BAR : bool
 BAR --> BS : bool
 deactivate BAR
 
-break BadgeAward gia' presente per il target
+break BadgeAward già presente per il target
   BS --> Router : ValidationError
   Router --> GM : 400 Bad Request
 end

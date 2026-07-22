@@ -104,7 +104,7 @@ Questo documento descrive l'architettura di MissionManager: il modello del domin
 
 ## 1. Panoramica del sistema
 
-MissionManager è un sistema per la **gestione del ciclo di vita di missioni operative**. Gli operatori definiscono missioni articolate in obiettivi e attività, le assegnano a più persone e gruppi contemporaneamente, avanzano gli stati lungo una macchina a stati e riconoscono i completamenti con badge propagati automaticamente agli assegnatari. Il sistema espone la stessa logica attraverso tre interfacce utente distinte: un'interfaccia web asincrona, una REST API JSON asincrona, e una CLI.
+MissionManager è un sistema per la **gestione del ciclo di vita di missioni operative**. Gli operatori definiscono missioni articolate in obiettivi e attività, le assegnano a più persone e gruppi contemporaneamente, avanzano gli stati lungo una macchina a stati e riconoscono i completamenti con badge propagati automaticamente agli assegnatari. Il sistema espone la stessa logica attraverso tre interfacce utente distinte: un'interfaccia web asincrona, una REST API JSON asincrona e una CLI.
 
 ### Capacità principali
 
@@ -171,7 +171,7 @@ Gli obiettivi non possiedono uno stato operativo proprio e non vengono marcati m
 
 ### 2.5 Activity (Attività)
 
-È un'unità di lavoro eseguibile all'interno di un **Objective** (appartenente a un `MissionAssignment`). Ha un proprio ciclo di vita (`Status`). `ActivityService.assign_to()` aggiunge un assegnatario all'attività e, se l'attività era in stato `UNASSIGNED`, la transisce automaticamente ad `ASSIGNED`; l'attività deve avere almeno un assegnatario prima di poter passare allo stato `IN_PROGRESS`. Gli assegnatari ammessi dipendono dall'assignment: se `assignee_type == GROUP`, solo i membri di quel gruppo; se `assignee_type == PERSON`, solo quella persona. Una singola persona può essere assegnata a più attività dello stesso `MissionAssignment`. L'attività ha un unico stato e un unico esito, indipendentemente da quante persone vi siano assegnate. Può ricevere un `BadgeAward` di completamento indipendentemente dall'obiettivo e dall'assignment padre.
+È un'unità di lavoro eseguibile all'interno di un **Objective** (appartenente a un `MissionAssignment`). Ha un proprio ciclo di vita (`Status`). `ActivityService.assign_to()` aggiunge un assegnatario all'attività e, se l'attività era in stato `UNASSIGNED`, la porta automaticamente ad `ASSIGNED`; l'attività deve avere almeno un assegnatario prima di poter passare allo stato `IN_PROGRESS`. Gli assegnatari ammessi dipendono dall'assignment: se `assignee_type == GROUP`, solo i membri di quel gruppo; se `assignee_type == PERSON`, solo quella persona. Una singola persona può essere assegnata a più attività dello stesso `MissionAssignment`. L'attività ha un unico stato e un unico esito, indipendentemente da quante persone vi siano assegnate. Può ricevere un `BadgeAward` di completamento indipendentemente dall'obiettivo e dall'assignment padre.
 
 ### 2.6 Badge (Definizione di riconoscimento)
 
@@ -261,7 +261,7 @@ Le seguenti regole sono codificate nel dominio e nei servizi e non dipendono dal
 - L'esito di un `MissionAssignment` è **calcolato** dagli esiti dei suoi Objective; non viene impostato manualmente.
 - Una `Mission` non ha stato né esito propri: lo stato esiste solo a livello di `MissionAssignment`. Una `Mission` appena creata può non avere ancora nessun `MissionAssignment`.
 - Una `Mission` può dare origine a **N `MissionAssignment`** indipendenti, uno per ogni persona o gruppo assegnato; ogni assignment porta la propria copia istanziata degli obiettivi e delle attività.
-- La `AssignmentPolicy` della `Mission` può limitare quanti `MissionAssignment` possono essere creati: `max_total` impone un tetto storico permanente (nessun nuovo assignment è possibile una volta raggiunto, indipendentemente dallo stato degli assignment esistenti); `max_concurrent` impone un tetto sugli assignment operativi (`ASSIGNED`, `IN_PROGRESS`) attivi simultaneamente. Gli assignment `UNASSIGNED` sono bozze e non consumano capacità concorrente; il controllo viene ripetuto in `AssignmentService.assign()`. I controlli avvengono in `AssignmentService.create()` prima del hook `BEFORE_CREATE_ASSIGNMENT`.
+- L'`AssignmentPolicy` della `Mission` può limitare quanti `MissionAssignment` possono essere creati: `max_total` impone un tetto storico permanente (nessun nuovo assignment è possibile una volta raggiunto, indipendentemente dallo stato degli assignment esistenti); `max_concurrent` impone un tetto sugli assignment operativi (`ASSIGNED`, `IN_PROGRESS`) attivi simultaneamente. Gli assignment `UNASSIGNED` sono bozze e non consumano capacità concorrente; il controllo viene ripetuto in `AssignmentService.assign()`. I controlli avvengono in `AssignmentService.create()` prima dell'hook `BEFORE_CREATE_ASSIGNMENT`.
 - Gli identificatori di `Person` e `Group` usati nelle assegnazioni vengono verificati tramite `PersonRepository.exists()` e `GroupRepository.exists()` prima di creare un `MissionAssignment`.
 - Un `MissionAssignment` può essere creato con o senza assegnatario. Se creato con `assignee_type` e `assignee_id` valorizzati, nasce in stato `ASSIGNED`; se creato senza assegnatario, nasce in stato `UNASSIGNED` e `assignee_type`/`assignee_id` rimangono `None` finché non viene invocato `AssignmentService.assign()`. Lo stato `IN_PROGRESS` si raggiunge automaticamente quando almeno una Activity interna passa allo stato `IN_PROGRESS` tramite `ActivityService.update_status()`.
 - `ActivityService.assign_to()` aggiunge un assegnatario all'attività e, se l'attività era in stato `UNASSIGNED`, la porta automaticamente ad `ASSIGNED`. Un'attività deve avere **almeno un assegnatario** prima di poter passare a `IN_PROGRESS`; l'esistenza della persona viene verificata tramite `PersonRepository.exists()`.
@@ -823,7 +823,7 @@ $ missionmanager person group-member-remove <group-uuid> <person-uuid>
 
 ### 9.4 Autenticazione e verifica delle credenziali
 
-L'**autenticazione** (*chi sei*) è distinta dall'**autorizzazione** (*cosa puoi fare*, [§10](#10-sistema-acl-e-autorizzazione)): stabilisce l'identità del richiedente, che i frontend trasportano poi come `Person`/`Profile` verso il confine ACL. Backend selezionato in configurazione (`security.auth.backend`), coerente con quello delle persone (`local` con `local`, `oidc` con `oidc`):
+L'**autenticazione** (*chi sei*) è distinta dall'**autorizzazione** (*cosa puoi fare*, [§10](#10-sistema-acl-e-autorizzazione)): stabilisce l'identità del richiedente, che i frontend trasportano poi come `Person`/`Profile` verso il confine ACL. Il backend è selezionato in configurazione (`security.auth.backend`) ed è coerente con quello delle persone (`local` con `local`, `oidc` con `oidc`):
 
 - **Locale** — l'operatore prova la propria identità con nickname + password; il sistema verifica l'hash e rilascia un token di sessione applicativo. Le credenziali locali sono un contratto di dominio (porta `CredentialRepository`) separato dall'anagrafica `Person`, così una `Person` può esistere senza credenziali.
 - **OIDC** — l'identità è delegata a un identity provider esterno (Authentik/Keycloak) via Authorization Code + PKCE; l'applicazione non custodisce password.
@@ -1294,7 +1294,7 @@ HookContext:
 
 Nei flussi anonimi ammessi (la creazione del primo amministratore al primo avvio) gli hook vengono comunque eseguiti con `operator_id = None` nel contesto.
 
-I hook **BEFORE_\*** possono annullare l'operazione impostando `ctx.abort = True`: `PluginRegistry` interrompe l'iterazione e solleva `OperationAbortedError` (HTTP 422, errore CLI). L'operazione non procede a scritture o mutazioni di stato; eventuali letture preliminari già necessarie al service possono essere avvenute. I hook **AFTER_\*** ricevono il risultato già persistito in `ctx.result`: le eccezioni che sollevano vengono catturate e loggate, ma non propagate (l'operazione è già completata).
+Gli hook **BEFORE_\*** possono annullare l'operazione impostando `ctx.abort = True`: `PluginRegistry` interrompe l'iterazione e solleva `OperationAbortedError` (HTTP 422, errore CLI). L'operazione non procede a scritture o mutazioni di stato; eventuali letture preliminari già necessarie al service possono essere avvenute. Gli hook **AFTER_\*** ricevono il risultato già persistito in `ctx.result`: le eccezioni che sollevano vengono catturate e loggate, ma non propagate (l'operazione è già completata).
 
 ### 14.4 PluginRegistry
 
@@ -1406,7 +1406,7 @@ ExtensionLoader:
     load_all() → list[MissionExtension]         # carica tutte le estensioni trovate
 ```
 
-Scopre solo bundle `<scan_dir>/<id>/manifest.json + extension.py`. Il loader legge il manifest senza eseguire codice, verifica `manifest_checksum` e `code_checksum` contro `InstalledManifestRegistry`, importa `extension.py` solo dopo il successo di entrambe le verifiche e istanzia `Extension(manifest=..., **services)`. Se il registry è assente o vuoto non viene caricata alcuna estensione. Viene invocato una volta al bootstrap, prima dell'avvio del server o del CLI, e passa le istanze caricate a `ExtensionRegistry.register()`.
+Scopre solo bundle `<scan_dir>/<id>/manifest.json + extension.py`. Il loader legge il manifest senza eseguire codice, verifica `manifest_checksum` e `code_checksum` contro `InstalledManifestRegistry`, importa `extension.py` solo dopo il successo di entrambe le verifiche e istanzia `Extension(manifest=..., **services)`. Se il registry è assente o vuoto non viene caricata alcuna estensione. Viene invocato una volta al bootstrap, prima dell'avvio del server o della CLI, e passa le istanze caricate a `ExtensionRegistry.register()`.
 
 ### 15.5 Esempi di estensioni
 
@@ -1437,7 +1437,7 @@ BEFORE_EXT:<ext_id>:<evento>     ← fire_before(evento, payload, operator_id)
 AFTER_EXT:<ext_id>:<evento>      ← fire_after(evento, payload, result, operator_id)
 ```
 
-**Semantica.** Identica ai hook core: i BEFORE_* dei plugin TRUSTED possono porre il veto (`ctx.abort = True` → `OperationAbortedError`, che propaga al frontend: 422 REST/Web, errore CLI con exit code 1); le eccezioni degli AFTER_* vengono catturate e loggate; i plugin SANDBOXED ricevono una copia difensiva e non possono né abortire né mutare il contesto; l'ordine di esecuzione segue `priority` DESC.
+**Semantica.** Identica agli hook core: i BEFORE_* dei plugin TRUSTED possono porre il veto (`ctx.abort = True` → `OperationAbortedError`, che propaga al frontend: 422 REST/Web, errore CLI con exit code 1); le eccezioni degli AFTER_* vengono catturate e loggate; i plugin SANDBOXED ricevono una copia difensiva e non possono né abortire né mutare il contesto; l'ordine di esecuzione segue `priority` DESC.
 
 **Sicurezza del namespace.** Il namespace obbligatorio impedisce a un'estensione di scatenare hook core "falsi" o di invadere il namespace di un'altra estensione: l'`ext_id` è quello verificato dal loader (checksum + registro installati), il charset di id ed evento è vincolato (niente `:`), e i service core scatenano gli hook con i membri dell'enum `HookPoint`, mai con stringhe — un plugin registrato su una stringa arbitraria non può quindi intercettare i flussi core. Il loader dei plugin rifiuta ogni nome di hook che non sia un membro dell'enum o un nome custom ben formato.
 

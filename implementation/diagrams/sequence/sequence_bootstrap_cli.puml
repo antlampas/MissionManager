@@ -1,6 +1,6 @@
 @startuml sequence_bootstrap_cli
 ' SPDX-License-Identifier: CC-BY-SA-4.0
-title Bootstrap CLI - identita, plugin ed estensioni
+title Bootstrap CLI - identità, plugin ed estensioni
 participant ":bootstrap_cli.py" as BOOT
 participant "ConfigLoader" as CFG
 participant "PersonRepository" as PREPO
@@ -19,7 +19,7 @@ CFG --> BOOT: persistence, security,\nplugins, extensions, operator_id
 BOOT -> PREPO: costruisce backend person/group\nlocal o OIDC
 BOOT -> SVCS: costruisce service core\ncome bootstrap REST
 
-== Identita CLI ==
+== Identità CLI ==
 BOOT -> IDA: new CliOperatorIdentityAdapter(config, PREPO)
 alt identity_mode == user
   IDA -> PREPO: get(operator_id)

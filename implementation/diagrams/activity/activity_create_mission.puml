@@ -69,7 +69,7 @@ partition "Costruzione entità" {
 partition "Persistenza" {
   :mission_repo.**save**(mission)\n(con tutti gli Objective e Activity annidati);
   note right
-    L'adapter concrete salva la struttura annidata
+    L'adapter concreto salva la struttura annidata
     atomicamente (transazione per SQL,
     sequenza atomica per altri backend).
     Se una sotto-entità fallisce, l'intera

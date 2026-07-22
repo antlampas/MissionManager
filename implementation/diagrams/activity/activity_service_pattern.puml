@@ -85,7 +85,7 @@ partition "4. Operazione principale" {
     • Operazioni di lettura: get(), list_by_*()
     Per operazioni composite (es. replicazione blueprint,
     propagazione badge): multiple chiamate ai repository.
-    L'adapter concrete garantisce atomicità delle scritture
+    L'adapter concreto garantisce l'atomicità delle scritture
     correlate (transazione SQL o sequenza atomica).
   end note
 }
